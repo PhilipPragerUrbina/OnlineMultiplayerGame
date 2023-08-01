@@ -60,6 +60,14 @@ public:
     }
 
     /**
+     * Get the inverse combined projection and view matrix
+     * Can be used to go from clip space to world space
+     */
+    [[nodiscard]] glm::mat4 getInverseMatrix() const {
+        return glm::inverse(projection*transform);
+    }
+
+    /**
      * Get the transformation matrix of the camera
      */
     [[nodiscard]] const glm::mat4& getTransform() const {

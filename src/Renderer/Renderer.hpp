@@ -11,6 +11,7 @@
 #include "FrameBuffer.hpp"
 #include "Mesh.hpp"
 #include "SkinnedMesh.hpp"
+#include "../Physics/SDFCollision.hpp"
 
 /**
  * Enable backface culling. Beware of winding order.
@@ -24,7 +25,8 @@ class Renderer {
 private:
     std::vector<Texture> textures;
     VertexShader vertex_shader;
-    float near_plane{},far_plane{};
+    Camera camera;
+    float near_plane{},far_plane{}; //todo combine
 
     /**
        * Get interpolated value
@@ -247,7 +249,8 @@ public:
      * @param textures Texture to use in rendering. Index corresponds to texture id.
      * @param camera Starting camera
      */
-    explicit Renderer(const std::vector<Texture>& textures, const Camera& camera) : textures(textures) , vertex_shader(){
+    explicit Renderer(const std::vector<Texture>& textures, const Camera& camera) : textures(textures) , vertex_shader() ,
+                                                                                    camera(camera){
         setCamera(camera);
     }
 
@@ -258,6 +261,7 @@ public:
         vertex_shader.setCamera(new_camera);
         near_plane = new_camera.getNearPlane();
         far_plane = new_camera.getFarPlane();
+        camera = new_camera;
     }
 
     /**
@@ -268,6 +272,41 @@ public:
         for (int x = 0; x < frame_buffer.getWidth(); ++x) {
             for (int y = 0; y < frame_buffer.getHeight(); ++y) {
                 frame_buffer.setPixel(x,y,{background_color,far_plane});
+            }
+        }
+    }
+
+    /**
+    * Ray march an SDF into the framebuffer
+     * @param frame_buffer Frame buffer to render to
+     * @param sdf World space SDF
+     * @param color Color of SDF
+    */
+    void drawSDF(FrameBuffer& frame_buffer, const SDF& sdf, const glm::vec3& color) const {
+        for (int x = 0; x < frame_buffer.getWidth(); ++x) {
+            for (int y = 0; y < frame_buffer.getHeight(); ++y) {
+                //Get clip space -1 to 1 range
+                float uvx = 2.0f*((float)x/frame_buffer.getWidth() - 0.5f);
+                float uvy = 2.0f*(float)y/frame_buffer.getWidth() - 0.5f;
+                //Get ray origin and direction in world space
+                //see https://stackoverflow.com/questions/2354821/raycasting-how-to-properly-apply-a-projection-matrix
+                glm::mat4 inverse_camera = camera.getInverseMatrix();
+                glm::vec3 ray_origin = inverse_camera * glm::vec4{uvx,uvy,-1.0f,1.0f} * near_plane;
+                glm::vec3 ray_direction = glm::normalize(inverse_camera * glm::vec4{glm::vec2{uvx,uvy} * (far_plane - near_plane), far_plane + near_plane, far_plane - near_plane});
+                //March rays
+                //see https://michaelwalczyk.com/blog-ray-marching.html
+                float depth = 0;
+                const int MAX_STEPS = 40;
+                const float MIN_DIST = 0.01;
+                for(int i = 0; i < MAX_STEPS; i++){
+                    if(depth > far_plane) break;
+                    glm::vec3 current_position = ray_origin + ray_direction * depth;
+                    float current_distance = sdf(current_position);
+                    if(current_distance < MIN_DIST){
+                        frame_buffer.setPixelIfDepth(x,y,{color,depth});//todo fix depth
+                    }
+                    depth += current_distance;
+                }
             }
         }
     }

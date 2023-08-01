@@ -13,7 +13,12 @@
 #include <thread>
 #include <typeinfo>
 #include "server_main.hpp"
+#include "Physics/SDFCollision.hpp"
+#include "GameState/SDFDemo.hpp"
+
 bool window_close = false; //does not need atomic as is only written by one thread
+
+//todo add external licenses
 
 /**
  * The rendering thread
@@ -68,7 +73,11 @@ int main(int argc, char* argv[]) {
     gameobjects.emplace_back(new Shark{});
     gameobjects.emplace_back(new Shark{glm::translate(glm::identity<glm::mat4>(), {3,0,0})});
     gameobjects.emplace_back(new Shark{glm::translate(glm::scale(glm::identity<glm::mat4>(), {0.2,0.2,0.2}),{0,15,0})});
+    gameobjects.emplace_back(new SDFDemo());
+
+    //Player sets camera so should be drawn last or first
     gameobjects.emplace_back(new Player{{0,2,5},camera});
+
 
     std::vector<Texture> textures;
     for (const auto& gameobject : gameobjects) {
