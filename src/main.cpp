@@ -7,7 +7,7 @@
 #include "GameState/GameObject.hpp"
 #include "GameState/Shark.hpp"
 #include "GameState/Player.hpp"
-#include "Networking/UDPSocket.hpp"
+#include "Networking/ConnectionManager.hpp"
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -49,16 +49,45 @@ int main(int argc, char* argv[]) {
         return serverMain();
     }
 
-    std::cout << "Initializing client \n";
-    UDPSocket socket;
-    UDPSocket::Address server = UDPSocket::getAddress(8080, "127.0.0.1");
 
-    std::string message = "whoo hoo whoooooooooooooooooooooooo hooooooooooooooo!!!!!";
-    std::cout << "Sending message to server \n";
-    socket.sendTo(server,message.c_str(), message.size());
+    ConnectionManager client(ConnectionManager::getAddress(8080, "127.0.0.1"));
+    while(true){
+        if(!client.processIncoming([](bool TCP,const std::vector<uint8_t>& data, ConnectionManager& manager){
+            std::string message((const char *)(data.data()));
+            if(TCP) {
+                std::cout << "TCP received " << " : " << message << "\n";
+            }else{
+                std::cout << "UDP received " <<  " : " << message << "\n";
+            }
+        })){
+          //disconnect
+            std::cout << "Server disconnect \n";
+            break;
+        }
+        std::string message;
+        std::cout << "Would you like to send a message or 'exit'? \n";
+        std::cin >> message;
+        if(message == "exit"){
+            break;
+        }else{
+            std::cout << "Preparing for sending: " << message <<   "\n";
+            std::vector<uint8_t> data(message.size()+1);
+            //copy data
+            for (int i = 0; i < message.size()+1; ++i) { //add null terminator
+                data[i] = message[i];
+            }
+            std::cout << "Sending to server with TCP "  <<   "\n";
+            if(!client.writeTCP(data)){
+                std::cout << "Server disconnect \n";
+                break;
+            };
+            std::cout << "Sending to server with UDP "  <<   "\n";
+            client.writeUDP(data);
+        }
+    }
+    std::cout << " Exiting \n";
 
-    std::cout << "Closing Client \n";
-    socket.close();
+    return 0;
 
     const int WIDTH = 800;
     const int HEIGHT = 800;
