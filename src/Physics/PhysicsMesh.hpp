@@ -5,6 +5,7 @@
 #pragma once
 
 #include <numeric>
+#include <algorithm>
 #include "../Renderer/Mesh.hpp"
 #include "SphereBV.hpp"
 
@@ -60,11 +61,11 @@ private:
      */
     static float triangleStandardDeviation(const std::vector<Triangle>& input, int axis){
         //Calculate mean
-        float mean = std::accumulate(input.begin(), input.end(),0.0f, [axis] (float last_result, const Triangle& element){return last_result +  PhysicsMesh::getTriCenter(element)[axis];})/ input.size();
+        float mean = std::accumulate(input.begin(), input.end(),0.0f, [axis] (float last_result, const Triangle& element){return last_result +  PhysicsMesh::getTriCenter(element)[axis];})/ (float)input.size();
 
         //subtract values and square
         float sum_of_squares = std::accumulate(input.begin(), input.end(),0.0f, [axis,mean] (float last_result, const Triangle& element){return last_result +  (PhysicsMesh::getTriCenter(element)[axis]-mean)*(PhysicsMesh::getTriCenter(element)[axis]-mean);});
-        return sqrt(sum_of_squares/input.size());
+        return sqrtf(sum_of_squares/(float)input.size());
     }
 
 
@@ -103,7 +104,7 @@ private:
         std::sort(sorted.begin(), sorted.end(), [axis]( const Triangle& lhs, const Triangle& rhs){return PhysicsMesh::getTriCenter(lhs)[axis] <  PhysicsMesh::getTriCenter(rhs)[axis];});
 
         a = std::vector(sorted.begin(),sorted.begin() + (sorted.size()/2));
-        b = std::vector(sorted.begin() +  (sorted.size()/2),sorted.end() );
+        b = std::vector(sorted.begin() + (sorted.size()/2),sorted.end() );
 
     }
 
@@ -139,7 +140,7 @@ private:
     /**
      * Traverse the BVH for sphere collision
      */
-    std::vector<glm::vec3> collideRecurse(const SphereBV& sphere, int index) const {
+    [[nodiscard]] std::vector<glm::vec3> collideRecurse(const SphereBV& sphere, int index) const {
 
         if(sphere.intersect(bvh[index].bound)){
             if(bvh[index].triangle != -1){
@@ -185,9 +186,7 @@ public:
         recurseBuild(mesh.tris);
     }
 
-    PhysicsMesh(){
-
-    }
+    PhysicsMesh() = default;
 
     /**
      * Ray cast the Physics mesh

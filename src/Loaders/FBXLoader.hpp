@@ -42,7 +42,7 @@ size_t recurseBones(ufbx_scene* scene, std::vector<Pose::Bone> & animation_data,
  * Returns empty mesh on failure
  * @return Mesh
  */
-Mesh loadFBX(const std::string& filepath, int texture_id){
+Mesh loadFBX(const std::string& filepath){
     Mesh output_mesh{};
 
     ufbx_error error;
@@ -64,7 +64,6 @@ Mesh loadFBX(const std::string& filepath, int texture_id){
             //for each triangle
             for (size_t k = 0; k < indices_count / 3; ++k) {
                 Triangle triangle{};
-                triangle.texture_id = texture_id;
                 //for each vertex
                 for (int v = 0; v < 3; ++v) {
                     auto index = tri_indices[k*3+v];
@@ -102,7 +101,7 @@ Mesh loadFBX(const std::string& filepath, int texture_id){
  * Currently only loads skeleton,animation is not yet supported
  * Returns empty mesh on failure
  */
-SkinnedMesh loadFBXSkinned(const std::string& filepath, int texture_id){
+SkinnedMesh loadFBXSkinned(const std::string& filepath){
     SkinnedMesh output_mesh{};
 
     ufbx_error error;
@@ -162,7 +161,6 @@ SkinnedMesh loadFBXSkinned(const std::string& filepath, int texture_id){
             for (size_t k = 0; k < indices_count / 3; ++k) {
                 Triangle triangle{};
                 SkinnedTriangle skinned_triangle{};
-                triangle.texture_id = texture_id;
                 //for each vertex
                 for (int v = 0; v < 3; ++v) {
                     auto index = tri_indices[k*3+v];

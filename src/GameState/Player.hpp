@@ -10,6 +10,7 @@
 /**
  * The player controller
  */
+ /*
 class Player : public GameObject{
 private:
 
@@ -166,7 +167,6 @@ public:
                 const float SENSITIVITY = 100.0f;
                 current_radians_x +=  (float)event.motion.xrel / SENSITIVITY;
                 current_radians_y += (float)event.motion.yrel / SENSITIVITY;
-
                 direction.x = sinf(current_radians_x);
                 direction.y = cosf(current_radians_x);
 
@@ -194,3 +194,6 @@ public:
         renderer.setCamera(camera);
     }
 };
+  */
+//todo rewrite and create map class
+//todo make sure to only set camera for primary player

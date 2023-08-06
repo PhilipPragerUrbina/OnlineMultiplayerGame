@@ -19,12 +19,10 @@
 const bool BACKFACE_CULLING = true;
 
 /**
- * Software rasterizer
+ * A Multithreading Software rasterizer
  */
 class Renderer {
 private:
-    std::vector<Texture> textures;
-    VertexShader vertex_shader;
     Camera camera;
     float near_plane{},far_plane{}; //todo combine
 
@@ -88,6 +86,7 @@ private:
         for (auto pos : triangle.pos) {
             //if(abs(pos.x) > pos.w || abs(pos.y) > pos.w || abs(pos.z) > pos.w ) count--;
         }
+        //todo check this out
         if(count == 0) return true;
         //Cull triangles that have not properly been clipped
         for (auto pos : triangle.pos) {
@@ -130,8 +129,9 @@ private:
      * Rasterize a triangle to the frame buffer
      * @param clip_tri Triangle after vertex shader and projection
      * @param frame_buffer Frame buffer to write to
+     * @param texture Texture to use for colors
      */
-    void rasterize(const Triangle& clip_tri,FrameBuffer& frame_buffer) const {
+    void rasterize(const Triangle& clip_tri,FrameBuffer& frame_buffer, const Texture& texture) const {
         //Cull
         if(cull(clip_tri)) return;
         //Get screen space (x,y,depth)
@@ -151,13 +151,12 @@ private:
                 float depth;
                 if(inTriangle(x,y,screen_space,depth,barycentric)) {
                     //todo add fragment shader class here
-                    assert(clip_tri.texture_id >= 0 && clip_tri.texture_id < textures.size());
                     glm::vec2 uv = applyBarycentricPerspective(clip_tri.tex, barycentric, clip_tri.pos);
                     //todo optimize
-                    if( textures[clip_tri.texture_id].isTransparent((int)(uv.x * (float)(textures[clip_tri.texture_id].getWidth()-1)),(int)(uv.y * (float)(textures[clip_tri.texture_id].getHeight()-1)))){
+                    if( texture.isTransparent((int)(uv.x * (float)(texture.getWidth()-1)),(int)(uv.y * (float)(texture.getHeight()-1)))){
                         continue;
                     }
-                    Texture::Color texture_color = textures[clip_tri.texture_id].getPixel((int)(uv.x * (float)(textures[clip_tri.texture_id].getWidth()-1)),(int)(uv.y * (float)(textures[clip_tri.texture_id].getHeight()-1)));
+                    Texture::Color texture_color = texture.getPixel((int)(uv.x * (float)(texture.getWidth()-1)),(int)(uv.y * (float)(texture.getHeight()-1)));
                     glm::vec3 color = {(float)texture_color.r,(float)texture_color.g, (float)texture_color.b};
                     frame_buffer.setPixelIfDepth(x,y,{color ,depth});
                 }
@@ -246,11 +245,9 @@ private:
 public:
     /**
      * Create a renderer
-     * @param textures Texture to use in rendering. Index corresponds to texture id.
      * @param camera Starting camera
      */
-    explicit Renderer(const std::vector<Texture>& textures, const Camera& camera) : textures(textures) , vertex_shader() ,
-                                                                                    camera(camera){
+    explicit Renderer(const Camera& camera) :camera(camera){
         setCamera(camera);
     }
 
@@ -258,7 +255,6 @@ public:
      * Set the current camera
      */
     void setCamera(const Camera& new_camera) {
-        vertex_shader.setCamera(new_camera);
         near_plane = new_camera.getNearPlane();
         far_plane = new_camera.getFarPlane();
         camera = new_camera;
@@ -276,12 +272,14 @@ public:
         }
     }
 
+    //todo move to gpu backen
     /**
     * Ray march an SDF into the framebuffer
      * @param frame_buffer Frame buffer to render to
      * @param sdf World space SDF
      * @param color Color of SDF
     */
+    /*
     void drawSDF(FrameBuffer& frame_buffer, const SDF& sdf, const glm::vec3& color) const {
         for (int x = 0; x < frame_buffer.getWidth(); ++x) {
             for (int y = 0; y < frame_buffer.getHeight(); ++y) {
@@ -310,6 +308,10 @@ public:
             }
         }
     }
+    */
+
+
+
 
     /**
     * Draw a skinned mesh. Can be called multiple times per frame. Make sure to clear frame every frame.
@@ -317,16 +319,19 @@ public:
     * @param mesh Skinned Mesh to draw. Make sure texture ids match the renderers texture buffer.
     * @param model_transform Transform of mesh.
      * @param bones Bones to pose skinned mesh with their final transforms. Must be meant for the mesh.
+     * @param texture Texture to use for rendering
     */
-    void drawSkinned(FrameBuffer& frame_buffer, const SkinnedMesh& mesh, const glm::mat4& model_transform, const std::vector<glm::mat4>& bones) {
-        assert(mesh.num_bones == bones.size());
+    void drawSkinned(FrameBuffer& frame_buffer, const SkinnedMesh& mesh, const glm::mat4& model_transform, const std::vector<glm::mat4>& bones, const Texture& texture) const {
+        assert(mesh.num_bones == (int)bones.size());
+        VertexShader vertex_shader{};
+        vertex_shader.setCamera(camera);
         vertex_shader.setModelTransform(model_transform);
         for (const SkinnedTriangle& triangle : mesh.tris) {
             Triangle view_tri = vertex_shader.toViewSpaceSkinned(triangle, bones); //Geometry shader
             std::vector<Triangle> clipped_view_tris = clip(view_tri);
             for (const Triangle& clipped_view_tri : clipped_view_tris) {
                 Triangle clip_tri = vertex_shader.toClipSpace(clipped_view_tri); //Project
-                rasterize(clip_tri,frame_buffer);
+                rasterize(clip_tri,frame_buffer,texture);
             }
         }
     }
@@ -337,15 +342,18 @@ public:
      * @param frame_buffer Frame buffer to draw to.
      * @param mesh Mesh to draw. Make sure texture ids match the renderers texture buffer.
      * @param model_transform Transform of mesh.
+     * @param texture Texture to use for rendering
      */
-    void draw(FrameBuffer& frame_buffer, const Mesh& mesh, const glm::mat4& model_transform){
+    void draw(FrameBuffer& frame_buffer, const Mesh& mesh, const glm::mat4& model_transform ,const Texture& texture) const {
+        VertexShader vertex_shader{};
+        vertex_shader.setCamera(camera);
         vertex_shader.setModelTransform(model_transform);
         for (const Triangle& triangle : mesh.tris) {
             Triangle view_tri = vertex_shader.toViewSpace(triangle); //Geometry shader
             std::vector<Triangle> clipped_view_tris = clip(view_tri);
             for (const Triangle& clipped_view_tri : clipped_view_tris) {
                 Triangle clip_tri = vertex_shader.toClipSpace(clipped_view_tri); //Project
-                rasterize(clip_tri,frame_buffer);
+                rasterize(clip_tri,frame_buffer,texture);
             }
         }
     }

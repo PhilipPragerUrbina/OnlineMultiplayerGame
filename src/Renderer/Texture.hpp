@@ -24,7 +24,7 @@ public:
      * @param height Height in pixels
      * @param channels Channel count. At least 3(r,g,b).
      */
-    Texture(int width,int height,int channels = 3) : channels(channels), width(width), height(height), pixels(channels*width*height){
+    Texture(int width,int height,int channels = 3) : pixels(channels*width*height), channels(channels), width(width), height(height){
         assert(channels>=3);
     }
 

@@ -11,7 +11,7 @@
  * A sphere bounding volume
  */
 struct SphereBV {
-    glm::vec3 position;
+    glm::vec3 position{};
     float radius;
 
     /**
@@ -26,7 +26,7 @@ struct SphereBV {
      * @param points Points to contain. Should not be empty.
      * @param inflate Additional extra radius to add.
      */
-    SphereBV(const std::vector<glm::vec3>& points, float inflate = 0){
+    explicit SphereBV(const std::vector<glm::vec3>& points, float inflate = 0){
         assert(!points.empty());
         //Get center of points using average
         glm::vec3 center = {0,0,0};
@@ -62,7 +62,7 @@ struct SphereBV {
     //todo return proper collision normal
     /**
    * Collide this sphere with a triangle
-   * @param collision_point Point of collision of intersect
+   * @param collision_point Point of collision.
      * @param triangle_plane Normal of triangle surface toward collider.
    * @return True if intersect
    * @see https://wickedengine.net/2020/04/26/capsule-collision-detection/

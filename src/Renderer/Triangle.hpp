@@ -10,7 +10,6 @@
  * A triangle to be rendered
  */
 struct Triangle {
-    int texture_id;
     glm::vec4 pos[3]; //Vertex positions. Plus W component.
     glm::vec3 norm[3]; // Normals
     glm::vec2 tex[3]; //UV Coords

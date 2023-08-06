@@ -9,9 +9,11 @@
 #include "../Loaders/TextureLoader.hpp"
 #include "../Loaders/FBXLoader.hpp"
 
+
 /**
  * Test shark
  */
+ /*
 class Shark : public GameObject{
 private:
     SkinnedMesh mesh;
@@ -47,3 +49,4 @@ public:
         renderer.drawSkinned(frame_buffer,mesh,transform, mesh.animations[0].computeGlobalTransforms() );
     }
 };
+*/

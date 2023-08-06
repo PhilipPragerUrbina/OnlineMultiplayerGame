@@ -11,6 +11,7 @@
 #include <vector>
 #include <unordered_map>
 #include <cassert>
+#include <functional>
 
 /**
  * This class can act as a client or a server for managing combined UDP and TCP connections.
@@ -95,7 +96,7 @@ private:
         if(size <= 0 ) return {};
         //copy data from buffer
         std::vector<uint8_t> raw_data(size);
-        for (size_t i = 0; i < size; ++i) {
+        for (int i = 0; i < size; ++i) {
             raw_data[i] = buffer[i];
         }
         return raw_data;
@@ -111,7 +112,7 @@ private:
         if(size <= 0 ) return {};
         //copy data from buffer
         std::vector<uint8_t> raw_data(size);
-        for (size_t i = 0; i < size; ++i) {
+        for (int i = 0; i < size; ++i) {
             raw_data[i] = buffer[i];
         }
         return raw_data;
@@ -125,7 +126,7 @@ private:
      */
     static bool writeTCP(Socket socket, const std::vector<uint8_t>& data){
         int bytes_sent = send(socket, (const char *)(data.data()), (int)data.size(), 0);
-        return bytes_sent == data.size();
+        return bytes_sent == (int)data.size();
     }
 
     /**
@@ -136,7 +137,7 @@ private:
      */
     bool writeUDP(const Address& address, const std::vector<uint8_t>& data) const{
         int bytes_sent = sendto(data_socket, (const char *)(data.data()), (int)data.size(), 0,(const SOCKADDR * )(&address), sizeof(address));
-        return bytes_sent == data.size();
+        return bytes_sent == (int)data.size();
     }
 
     /**
@@ -229,8 +230,8 @@ public:
      * @param max_packets The maximum number of simultaneous or consecutive UDP packets that would be expected to arrive within the timeout. Just used as an upper bound for how many times to select.
      * @throw runtime_error Error regarding socket selection or connection. If a problem is encountered with a specific client, no error will be thrown, the client will just be considered disconnected. (Handle using disconnect callback).
      */
-    void processIncoming(void (*receive_callback)(bool TCP, u_long client_id, const std::vector<uint8_t>& packet_data,ConnectionManager& manager),
-                         void (*connection_callback)(u_long client_id,ConnectionManager& manager,bool disconnect),
+    void processIncoming(const std::function<void(bool TCP, u_long client_id, const std::vector<uint8_t>& packet_data,ConnectionManager& manager)>& receive_callback,
+                         const std::function<void(u_long client_id,ConnectionManager& manager,bool disconnect)>& connection_callback,
                          int timeout_ms = 50, int max_packets = 20){
         assert(server);
         //Collect multiple messages from one socket if needed
@@ -310,7 +311,7 @@ public:
      * @throw runtime_error Error regarding socket selection or connection.
      * @return False if server is disconnected.
      */
-    bool processIncoming(void (*receive_callback)(bool TCP, const std::vector<uint8_t>& packet_data,ConnectionManager& manager),int timeout_ms = 50, int max_packets = 20){
+    bool processIncoming(const std::function<void(bool TCP, const std::vector<uint8_t>& packet_data,ConnectionManager& manager)>& receive_callback,int timeout_ms = 50, int max_packets = 20){
         assert(!server);
         //Collect multiple messages from one socket if needed
         for (int i = 0; i < max_packets; ++i) {

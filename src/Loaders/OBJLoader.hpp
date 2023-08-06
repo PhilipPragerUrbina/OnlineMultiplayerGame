@@ -19,7 +19,7 @@
  * @param texture_id Texture ID to use for this mesh
  * @return Resulting mesh
  */
-Mesh loadOBJ(const std::string& filepath, int texture_id){
+Mesh loadOBJ(const std::string& filepath){
     //This code is mostly based on the tiny objloader example
 
     tinyobj::ObjReaderConfig reader_config;
@@ -64,7 +64,7 @@ Mesh loadOBJ(const std::string& filepath, int texture_id){
                         //todo auto generate normals
                     }
 
-                    // Check if `texcoord_index` is zero or positive. negative = no texcoord data
+                    // Check if `texcoord_index` is zero or positive. Negative = no texcoord data
                     if (idx.texcoord_index >= 0) {
                         triangle.tex[v] = {attrib.texcoords[2*size_t(idx.texcoord_index)+0],1.0 - attrib.texcoords[2*size_t(idx.texcoord_index)+1]}; //flip
                     } else {
@@ -76,7 +76,6 @@ Mesh loadOBJ(const std::string& filepath, int texture_id){
                 std::cout << "TinyObjReader: " << "Non triangles in this mesh";
             }
 
-            triangle.texture_id = texture_id;
             mesh.tris.push_back(triangle);
             index_offset += fv;
 

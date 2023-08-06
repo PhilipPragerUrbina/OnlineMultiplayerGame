@@ -9,7 +9,7 @@
 #include "../Loaders/OBJLoader.hpp"
 #include "../Loaders/TextureLoader.hpp"
 
-
+/*
 class SDFDemo : public GameObject{
     std::vector<glm::vec3> spheres;
     Mesh mesh;
@@ -64,3 +64,4 @@ public:
         return SphereBV();
     }
 };
+*/

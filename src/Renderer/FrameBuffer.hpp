@@ -23,7 +23,7 @@ public:
      * @param height Height in pixels
      * @param default_value Initial pixel values. R,G,B,Depth
      */
-    FrameBuffer(int width, int height, const glm::vec4& default_value) : width(width), height(height), pixels(width*height), bit_pixels(width*height*4) {
+    FrameBuffer(int width, int height, const glm::vec4& default_value) : pixels(width*height), bit_pixels(width*height*4), width(width), height(height) {
         for(glm::vec4& pixel : pixels){
             pixel = default_value;
         }

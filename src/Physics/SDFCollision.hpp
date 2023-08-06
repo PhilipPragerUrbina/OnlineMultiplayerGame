@@ -42,8 +42,6 @@ glm::vec3 SDFSamplePropagate(const SDF& a, const SDF& b, const glm::vec3& last_s
     float dist_a = a(last_sample);
     float dist_b = b(last_sample);
 
-    //Estimate normal
-    const float NORMAL_ESTIMATION_DIST = 0.001;
     //estimate normals
     glm::vec3 normal_a = estimateSDFNormal(a,last_sample);
     glm::vec3 normal_b = estimateSDFNormal(b,last_sample);

@@ -36,7 +36,7 @@ public:
      * @param far_plane Far projection plane
      */
     Camera(float fov_degrees, const glm::vec3& up, float aspect_ratio,float near_plane = 0.1, float far_plane = 1000)
-    : position({0,0,0}), look_at({0,0,0}), projection(glm::perspective(glm::radians(fov_degrees),aspect_ratio,near_plane,far_plane)), up(up), transform(), near_plane(near_plane),far_plane(far_plane) {
+    : position({0,0,0}), look_at({0,0,0}), up(up), transform(), projection(glm::perspective(glm::radians(fov_degrees),aspect_ratio,near_plane,far_plane)), near_plane(near_plane),far_plane(far_plane) {
         updateTransform();
     }
 

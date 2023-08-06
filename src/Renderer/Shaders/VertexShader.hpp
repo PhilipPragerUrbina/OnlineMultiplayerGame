@@ -48,7 +48,6 @@ public:
      */
     [[nodiscard]] Triangle toViewSpace(const Triangle& model_space) const {
         Triangle view_tri{};
-        view_tri.texture_id = model_space.texture_id;
         for (int i = 0; i < 3; ++i) {
             view_tri.pos[i] = clip_matrix * model_space.pos[i];
             view_tri.norm[i] = normal_matrix * model_space.norm[i];

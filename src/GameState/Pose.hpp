@@ -82,7 +82,7 @@ public:
      * Create a new pose
      * @param bones Pose data
      */
-    Pose(const std::vector<Bone>& bones) : bones(bones) {}
+    explicit Pose(const std::vector<Bone>& bones) : bones(bones) {}
 
     /**
      * Set the current transforms of the bones to the default transform

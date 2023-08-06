@@ -60,10 +60,12 @@ public:
      */
     bool isOpen(EventList& events_list) {
         SDL_Event event;
+        std::vector<SDL_Event> events;
         while(SDL_PollEvent(&event)){
-            events_list.events.push_back(event);
+            events.push_back(event);
             if(event.type == SDL_QUIT) return false;
         };
+        events_list.update(events);
         return true;
     }
 
