@@ -167,16 +167,19 @@ public:
 
     /**
      * Create a client socket that can connects to a server.
-     * Is not bound to a particular port.
      * @param server_address Address of server to connect to.
+     * @param client_port Port to bind this client to. Should not be bound to anything else.
      * @throw runtime_error Error starting socket or connecting.
      */
-    explicit ConnectionManager(const Address& server_address) : ConnectionManager() {
+    explicit ConnectionManager(const Address& server_address, Port client_port = 8081) : ConnectionManager() {
         server = false;
-        main_socket = socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
-        if(main_socket == INVALID_SOCKET)  throw std::runtime_error("Error starting main socket: " + std::to_string(WSAGetLastError()));
-        data_socket = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
-        if(data_socket == INVALID_SOCKET)  throw std::runtime_error("Error starting data socket: " + std::to_string(WSAGetLastError()));
+        //Bind sockets on the client for a consistent address the server can send to.
+        sockaddr_in client_options{};
+        client_options.sin_port = htons(client_port);
+        client_options.sin_family = AF_INET;
+        client_options.sin_addr.s_addr = htonl(INADDR_ANY);
+        if(bind(main_socket, (SOCKADDR *) &client_options, sizeof(client_options)) != 0) throw std::runtime_error("Client Error binding main socket: " + std::to_string(WSAGetLastError()));
+        if(bind(data_socket, (SOCKADDR *) &client_options, sizeof(client_options)) != 0) throw std::runtime_error("Client Error binding data socket: " + std::to_string(WSAGetLastError()));
         connectToServer(server_address);
     }
 
@@ -249,7 +252,7 @@ public:
             }
 
             //select
-            TIMEVAL timeout{0,timeout_ms};
+            TIMEVAL timeout{0,timeout_ms*1000}; //Convert milliseconds to microseconds
             int active = select((int)max_socket_id + 1 , &watching_connections , nullptr , nullptr , &timeout);
             if(active < 0){throw std::runtime_error("Error selecting socket: " + std::to_string(WSAGetLastError()));}
             if(active == 0) return; //Nothing more
@@ -315,7 +318,6 @@ public:
         assert(!server);
         //Collect multiple messages from one socket if needed
         for (int i = 0; i < max_packets; ++i) {
-
             //Add connections
             Socket max_socket_id = 0;
             FD_ZERO(&watching_connections);
@@ -325,7 +327,7 @@ public:
             max_socket_id = std::max(max_socket_id,data_socket);
 
             //select
-            TIMEVAL timeout{0,timeout_ms};
+            TIMEVAL timeout{0,timeout_ms*1000};//convert milliseconds to microseconds
             int active = select((int)max_socket_id + 1 , &watching_connections , nullptr , nullptr , &timeout);
             if(active < 0){throw std::runtime_error("Error selecting socket: " + std::to_string(WSAGetLastError()));}
             if(active == 0) return true; //Nothing more
@@ -333,7 +335,6 @@ public:
             //Process each connection then remove it from the set
             for (int j = 0; j < active; ++j) {
                if(FD_ISSET(data_socket,&watching_connections)){  //Incoming data packet
-
                     Address udp_address;
                     std::vector<uint8_t> data = readUDP(udp_address);
 

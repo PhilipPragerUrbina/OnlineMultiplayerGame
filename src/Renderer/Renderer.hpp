@@ -25,6 +25,7 @@ class Renderer {
 private:
     Camera camera;
     float near_plane{},far_plane{}; //todo combine
+    VertexShader vertex_shader{};
 
     /**
        * Get interpolated value
@@ -131,7 +132,7 @@ private:
      * @param frame_buffer Frame buffer to write to
      * @param texture Texture to use for colors
      */
-    void rasterize(const Triangle& clip_tri,FrameBuffer& frame_buffer, const Texture& texture) const {
+    void rasterize(const Triangle& clip_tri,FrameBuffer& frame_buffer, const Texture* texture) const {
         //Cull
         if(cull(clip_tri)) return;
         //Get screen space (x,y,depth)
@@ -153,10 +154,10 @@ private:
                     //todo add fragment shader class here
                     glm::vec2 uv = applyBarycentricPerspective(clip_tri.tex, barycentric, clip_tri.pos);
                     //todo optimize
-                    if( texture.isTransparent((int)(uv.x * (float)(texture.getWidth()-1)),(int)(uv.y * (float)(texture.getHeight()-1)))){
+                    if( texture->isTransparent((int)(uv.x * (float)(texture->getWidth()-1)),(int)(uv.y * (float)(texture->getHeight()-1)))){
                         continue;
                     }
-                    Texture::Color texture_color = texture.getPixel((int)(uv.x * (float)(texture.getWidth()-1)),(int)(uv.y * (float)(texture.getHeight()-1)));
+                    Texture::Color texture_color = texture->getPixel((int)(uv.x * (float)(texture->getWidth()-1)),(int)(uv.y * (float)(texture->getHeight()-1)));
                     glm::vec3 color = {(float)texture_color.r,(float)texture_color.g, (float)texture_color.b};
                     frame_buffer.setPixelIfDepth(x,y,{color ,depth});
                 }
@@ -258,6 +259,8 @@ public:
         near_plane = new_camera.getNearPlane();
         far_plane = new_camera.getFarPlane();
         camera = new_camera;
+        if(camera.getPosition() == glm::vec3 {0,0,0}) camera.setPosition({0.01,0.01,0.01});
+        vertex_shader.setCamera(camera);
     }
 
     /**
@@ -321,12 +324,10 @@ public:
      * @param bones Bones to pose skinned mesh with their final transforms. Must be meant for the mesh.
      * @param texture Texture to use for rendering
     */
-    void drawSkinned(FrameBuffer& frame_buffer, const SkinnedMesh& mesh, const glm::mat4& model_transform, const std::vector<glm::mat4>& bones, const Texture& texture) const {
-        assert(mesh.num_bones == (int)bones.size());
-        VertexShader vertex_shader{};
-        vertex_shader.setCamera(camera);
+    void drawSkinned(FrameBuffer& frame_buffer, const SkinnedMesh* mesh, const glm::mat4& model_transform, const std::vector<glm::mat4>& bones, const Texture* texture) {
+        assert(mesh->num_bones == (int)bones.size());
         vertex_shader.setModelTransform(model_transform);
-        for (const SkinnedTriangle& triangle : mesh.tris) {
+        for (const SkinnedTriangle& triangle : mesh->tris) {
             Triangle view_tri = vertex_shader.toViewSpaceSkinned(triangle, bones); //Geometry shader
             std::vector<Triangle> clipped_view_tris = clip(view_tri);
             for (const Triangle& clipped_view_tri : clipped_view_tris) {
@@ -344,11 +345,9 @@ public:
      * @param model_transform Transform of mesh.
      * @param texture Texture to use for rendering
      */
-    void draw(FrameBuffer& frame_buffer, const Mesh& mesh, const glm::mat4& model_transform ,const Texture& texture) const {
-        VertexShader vertex_shader{};
-        vertex_shader.setCamera(camera);
+    void draw(FrameBuffer& frame_buffer, const Mesh* mesh, const glm::mat4& model_transform ,const Texture* texture)  {
         vertex_shader.setModelTransform(model_transform);
-        for (const Triangle& triangle : mesh.tris) {
+        for (const Triangle& triangle : mesh->tris) {
             Triangle view_tri = vertex_shader.toViewSpace(triangle); //Geometry shader
             std::vector<Triangle> clipped_view_tris = clip(view_tri);
             for (const Triangle& clipped_view_tri : clipped_view_tris) {

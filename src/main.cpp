@@ -13,7 +13,25 @@ int main(int argc, char* argv[]) {
         return serverMain();
     }
 
-    Client client{ConnectionManager::getAddress(8080, "127.0.0.1")};
+    start:
+    std::cout << "Enter ip address or 'L' for local host\n";
+    std::string ip;
+    std::cin >> ip;
+    if(ip == "L"){
+        ip = "127.0.0.1";
+    }
+
+   // std::cout << "Enter port for this client\n";
+   // ConnectionManager::Port port;
+  //  std::cin >> port;
+
+    try {
+        Client client{ConnectionManager::getAddress(8080, ip),8081};
+    } catch (const std::runtime_error& error){
+        std::cout << error.what() << "\n";
+        goto start;
+    }
+
 
     return 0;
 }

@@ -106,17 +106,19 @@ public:
      * @param services Use this to query services. This is for reading only, see updateServices() for writing to services.
      * @param events Player events. (Only if an object is associated with a player).
      * @param delta_time Time that the last frame took in milliseconds. Multiply by this to ensure consistent movement.
+     * @param resource_manager Get read only resources like physics meshes.
      */
-    virtual void update(double delta_time, const EventList& events, const Services& services) = 0;
+    virtual void update(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
 
     /**
      * Like update, but it runs on the client side.
      * @param delta_time Time that the last frame took in milliseconds. Multiply by this to ensure consistent movement.
      * @param events Events that the client is inputting.
      * @param services Use this to query services. This is for reading only, see updateServices() for writing to services.
+     * @param resource_manager Get read only resources like physics meshes.
      * Will predict game state and apply new server state.
      */
-    virtual void predict(double delta_time, const EventList& events, const Services& services) = 0;
+    virtual void predict(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
 
     /**
      * Write to services here to update them on the state of the game object.
@@ -138,7 +140,7 @@ public:
      * @warning No game state should be changed here. This is read-only,for thread safety reasons.
      * @param renderer The renderer to render your meshes with.
      */
-    virtual void render( moodycamel::ReaderWriterQueue<RenderRequest>& render_queue, moodycamel::ReaderWriterQueue<Camera>& camera_queue,bool last) const = 0;
+    virtual void render( Renderer& renderer, FrameBuffer& frame_buffer, const ResourceManager& resource_manager) const = 0;
     //todo change to better and doc
 
     /**
@@ -220,7 +222,7 @@ protected:
     /**
      * @param state The state to apply to the object.
      */
-    virtual void deserializeInternal(const STATE& state) const = 0;
+    virtual void deserializeInternal(const STATE& state) = 0;
 
     /**
        * Create a new instance of this type.
@@ -235,9 +237,10 @@ protected:
      * @param delta_time Time that the last frame took in milliseconds. Multiply by this to ensure consistent movement.
      * @param events Events that the client is inputting.
      * @param services  Use this to query services. This is for reading only, see updateServices() for writing to services.
+     * @param resource_manager Get read only resources like colliders.
      * Use this to update the game state, but will be overridden by server state when available.
      */
-    virtual void predictInternal(double delta_time, const EventList& events, const Services& services) = 0;
+    virtual void predictInternal(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
 
     /**
      * Get the constructor params that can be used to create a copy of this object on the client side.
@@ -284,8 +287,8 @@ public:
     }
 
 
-    void predict(double delta_time, const EventList& events, const Services& services) override {
-        predictInternal(delta_time,events, services);
+    void predict(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) override {
+        predictInternal(delta_time,events, services,resource_manager);
         sync();
     }
 

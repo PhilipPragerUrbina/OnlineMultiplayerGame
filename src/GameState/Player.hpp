@@ -7,51 +7,214 @@
 #include "GameObject.hpp"
 #include "../Physics/PhysicsMesh.hpp"
 
+struct PlayerArgs {
+
+};
+
+struct PlayerState{
+    glm::vec3 position;
+    glm::vec3 direction;
+    glm::vec3 velocity;
+};
+
 /**
  * The player controller
  */
- /*
-class Player : public GameObject{
+class Player : public GameObjectImpl<Player,PlayerArgs,PlayerState>{
 private:
-
-    glm::mat4 transform = glm::identity<glm::mat4>();
-    Camera camera;
-
-    glm::vec3 direction;
-    glm::vec3 position;
-
-    bool input[6] = {false, false, false, false, false, false};
-
+    SphereBV hitbox{{0,0,0},0.1};
     float current_radians_x = 0, current_radians_y = 0; //view
+    Camera camera {90,{0,0,1},1};
 
-    Mesh map_mesh;
-    PhysicsMesh map_collider;
+    glm::vec3 position{2,2,2};
+    glm::vec3 direction{1,0,0};
+    glm::vec3 velocity{0,0,0};
 
-    SphereBV hitbox;
+    const float map_scale = 10.0f;
 
-    const float map_scale = 1.0f;
-    const float player_height = 10.0f;
+    bool main_player = false;
 
-    float grav_vel = 0; //Gravity velocity
+    ResourceManager::ResourceID texture;
+    ResourceManager::ResourceID mesh;
 public:
+    void loadResourcesClient(ResourceManager &manager, bool associated) override {
+        main_player = associated;
+        texture = manager.getTexture("Shark.png");
+        mesh = manager.getMesh("shorked.fbx", ResourceManager::FBX);
+    }
 
-    [[nodiscard]] SphereBV getBounds() const override {
+    void loadResourcesServer(ResourceManager &manager) override {
+        //nothing
+    }
+
+    void registerServices(Services &services) override {
+        //nothing
+    }
+
+    void deRegisterServices(Services &services) override {
+        //nothing
+    }
+
+    void update(double delta_time, const EventList &events, const Services &services,
+                const ResourceManager &resource_manager) override {
+        //waste cpu cycles such that update and predict run long enough for delta_time to have any precision whatsoever.(Important for consistent movement betwen client and server)
+        std::cout << "delta time " << delta_time << "\n";
+            //todo collider
+        direction = glm::normalize(direction);
+        camera.setPosition(position);
+        camera.setLookAt(position + direction);
+
+        float speed = 10.0f;
+        velocity = {0,0,0};
+
+        //interpolate between polling
+        if(events.buttons[0]){
+            velocity += glm::vec3 {direction.x,direction.y,0} * speed;
+        }
+        if(events.buttons[1]){
+            velocity += -glm::vec3 {direction.x,direction.y,0} * speed;
+        }
+        if(events.buttons[2]){
+            velocity += -glm::vec3{direction.y,-direction.x,0}* speed;
+        }
+        if(events.buttons[3]){
+            velocity += glm::vec3{direction.y,-direction.x,0}* speed;
+        }
+        if(events.buttons[4]){
+            velocity += glm::vec3{0,0,-1}* speed;
+        }
+        if(events.buttons[5]){
+            velocity += glm::vec3{0,0,1}* speed;
+        }
+
+        position += velocity * (float)delta_time;
+
+        const float SENSITIVITY = 100.0f;
+        current_radians_x =  (float)events.mouse_x / SENSITIVITY;
+        current_radians_y = (float)events.mouse_y / SENSITIVITY;
+        direction.x = sinf(current_radians_x);
+        direction.y = cosf(current_radians_x);
+
+        const float VERTICAL_CLAMP = 1.5; //todo vertical clampp does not actually effect event mouse and causes delay
+
+        //Clamp vertical
+        if(current_radians_y > VERTICAL_CLAMP){
+            current_radians_y = VERTICAL_CLAMP;
+        }
+
+        //Clamp vertical
+        if(current_radians_y < -VERTICAL_CLAMP){
+            current_radians_y = -VERTICAL_CLAMP;
+        }
+
+        direction.z = sinf(current_radians_y);
+
+
+
+    }
+
+    void updateServices(Services &services) const override {
+        //nothing
+    }
+
+    void render(Renderer& renderer,FrameBuffer& frame_buffer, const ResourceManager& manager) const override {
+            if(main_player){
+                renderer.setCamera(camera);
+            }else{
+                renderer.draw(frame_buffer,manager.readMesh(mesh),glm::translate(glm::identity<glm::mat4>(),position),manager.readTexture(texture));
+            }
+    }
+
+    SphereBV getBounds() const override {
         return hitbox;
     }
 
-    Player(const glm::vec3 & position, const Camera& camera) : camera(camera), direction({1,0,0}), position(position),
-                                                               hitbox(position,0.3f){}
-
-    void setUp(std::vector<Texture> &textures) override {
-        textures.push_back(loadTexture("Map2.png"));
-        map_mesh = loadOBJ("Map2.obj", textures.size()-1);
-        map_collider = PhysicsMesh(map_mesh);
-
-        position += glm::vec3 {0,0,-2};
+protected:
+    PlayerState serializeInternal() const override {
+        return PlayerState{position,direction,velocity};
     }
 
-    void update(double delta_time, const EventList &events) override {
-        hitbox.position = position/map_scale;
+    void deserializeInternal(const PlayerState &state) override {
+        position = state.position;
+        velocity = state.velocity;
+        direction = state.direction;
+    }
+
+    std::unique_ptr<GameObject> createNewInternal(const PlayerArgs &params) const override {
+        return std::unique_ptr<GameObject>(new Player());
+    }
+
+    void predictInternal(double delta_time, const EventList &events, const Services &services,
+                         const ResourceManager &resource_manager) override {
+        std::cout << "delta time " << delta_time << "\n";
+        if(main_player){
+            direction = glm::normalize(direction);
+            camera.setPosition(position);
+            camera.setLookAt(position + direction);
+
+            float speed = 10.0f;
+            velocity = {0,0,0};
+
+            //interpolate between polling
+            if(events.buttons[0]){
+                velocity += glm::vec3 {direction.x,direction.y,0} * speed;
+            }
+            if(events.buttons[1]){
+                velocity += -glm::vec3 {direction.x,direction.y,0} * speed;
+            }
+            if(events.buttons[2]){
+                velocity += -glm::vec3{direction.y,-direction.x,0}* speed;
+            }
+            if(events.buttons[3]){
+                velocity += glm::vec3{direction.y,-direction.x,0}* speed;
+            }
+            if(events.buttons[4]){
+                velocity += glm::vec3{0,0,-1}* speed;
+            }
+            if(events.buttons[5]){
+                velocity += glm::vec3{0,0,1}* speed;
+            }
+
+            position += velocity * (float)delta_time;
+
+            const float SENSITIVITY = 100.0f;
+            current_radians_x =  (float)events.mouse_x / SENSITIVITY;
+            current_radians_y = (float)events.mouse_y / SENSITIVITY;
+            direction.x = sinf(current_radians_x);
+            direction.y = cosf(current_radians_x);
+
+            const float VERTICAL_CLAMP = 1.5;
+
+            //Clamp vertical
+            if(current_radians_y > VERTICAL_CLAMP){
+                current_radians_y = VERTICAL_CLAMP;
+            }
+
+            //Clamp vertical
+            if(current_radians_y < -VERTICAL_CLAMP){
+                current_radians_y = -VERTICAL_CLAMP;
+            }
+
+            direction.z = sinf(current_radians_y);
+
+
+        } else{
+            position += velocity * (float)delta_time;
+        }
+    }
+
+    PlayerArgs getConstructorParamsInternal() const override {
+        return PlayerArgs();
+    }
+
+};
+  /*
+
+
+    float grav_vel = 0; //Gravity velocity
+   */
+/*
+       hitbox.position = position/map_scale;
         hitbox.radius = player_height/2.0f;
 
         direction = glm::normalize(direction);
@@ -186,14 +349,4 @@ public:
 
             }
         }
-
-    }
-
-    void render(Renderer &renderer, FrameBuffer& frame_buffer) const override {
-        renderer.draw(frame_buffer,map_mesh, glm::scale(glm::identity<glm::mat4>(), {map_scale,map_scale,map_scale}));
-        renderer.setCamera(camera);
-    }
-};
-  */
-//todo rewrite and create map class
-//todo make sure to only set camera for primary player
+ */

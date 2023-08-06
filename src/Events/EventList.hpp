@@ -14,7 +14,7 @@ struct EventList {
     static const int NUM_BUTTONS = 7;
     constexpr static const SDL_KeyCode mappings[NUM_BUTTONS] = {SDLK_w,SDLK_s, SDLK_a,SDLK_d,SDLK_SPACE,SDLK_c,SDLK_e}; //same size as num buttons
     bool buttons[NUM_BUTTONS] = {false}; //True for down up for false
-    uint32_t mouse_x = 0,mouse_y = 0; //Cumulative relative mouse movement
+    int32_t mouse_x = 0,mouse_y = 0; //Cumulative relative mouse movement
 
      /**
       * Update the event list from mapping and SDL events

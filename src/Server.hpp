@@ -15,6 +15,7 @@
 #include "readwriterqueue/readerwriterqueue.h"
 #include "Networking/ConnectionManager.hpp"
 #include "GameState/GameMap.hpp"
+#include "GameState/Player.hpp"
 
 /**
  * Contains information about a client
@@ -38,7 +39,7 @@ private:
     std::unordered_map<ObjectID,EventList> object_events{}; //Any objects with events assigned to them (Update thread)
 
     std::unordered_map<u_long,ClientInfo> clients{}; //Clients currently connected (Network thread)
-    std::unique_ptr<ConnectionManager> network; //Connection (Network thread)
+    ConnectionManager network; //Connection (Network thread)
 
     moodycamel::ReaderWriterQueue<std::pair<ObjectID ,EventList>> incoming_events{}; //New events to add to objects (Network thread -> Update thread)
     moodycamel::ReaderWriterQueue<std::pair<ObjectID ,std::unique_ptr<GameObject>>> new_object_queue; //New objects created by network thread. (Network thread -> Update thread)
@@ -93,7 +94,6 @@ private:
             }
 
         }else{  //data packet must be a client event
-
             auto client_message = extractStructFromPacket<ClientEvents>(packet_data,0);
             ClientInfo& client = clients[client_id];
 
@@ -132,7 +132,7 @@ private:
             std::cout << "Client " << client_id << " has connected \n";
             clients[client_id] = ClientInfo{client_id,{},0,{}};
             //todo init associated objects here.
-            //clients[client_id].associated_objects.push_back(addGameObjectNetworkThread(obj))
+            clients[client_id].associated_objects.emplace(addGameObjectNetworkThread(new Player()));
         }
     }
 
@@ -140,15 +140,14 @@ private:
     /**
      * Wait for incoming events and send out game state
      */
-    void networkThread(ConnectionManager::Port port){
-        network = std::make_unique<ConnectionManager>(port);
+    void networkThread(){
         while(running){
             //Gather messages
-            network->processIncoming([this](bool TCP, u_long client_id, const std::vector<uint8_t>& packet_data,ConnectionManager& manager){
+            network.processIncoming([this](bool TCP, u_long client_id, const std::vector<uint8_t>& packet_data,ConnectionManager& manager){
                         this->receiveCallback(TCP,client_id,packet_data,manager);
                 },[this](u_long client_id,ConnectionManager& manager,bool disconnect){
                     this->connectionCallback(client_id,manager,disconnect);
-                },20,8); //todo check tick
+                },50,20); //todo check tick
 
             //Send messages
             for (auto& [client_id, client] : clients) {
@@ -159,21 +158,20 @@ private:
                 for (const auto & [object_id, game_object] : *objects_buffer_network) {
                     std::vector<uint8_t> data;
                     if(client.cached_objects.find(object_id) == client.cached_objects.end()){
-                        std::cout << "New object sent" << "\n";
                         //must create a new object
                         MessageTypeMetaData type{NEW_OBJECT};
                         addStructToPacket(data,type);
                         NewObjectMetaData new_obj{game_object->getTypeID() ,object_id, client.associated_objects.find(object_id) != client.associated_objects.end()};
                         addStructToPacket(data,new_obj);
                         game_object->getConstructorParams(data);
-                        network->writeTCP(client_id,data);
+                        network.writeTCP(client_id,data);
                         client.cached_objects.emplace(object_id);
                     }else{
                         //must update object
                         StateMetaData meta_data{buffer_location,object_id,network_counter};
                         addStructToPacket(data,meta_data);
                         game_object->serialize(data);
-                        network->writeUDP(client_id,data);
+                        network.writeUDP(client_id,data);
                         network_counter = (network_counter + 1) % 256; //explicit wrap
                         buffer_location++;
                     }
@@ -199,9 +197,6 @@ private:
 
         auto last_update = std::chrono::steady_clock::now();
         while(running){
-            auto now = std::chrono::steady_clock::now();
-            double delta_time = (double)std::chrono::duration_cast<std::chrono::microseconds>(now - last_update).count() / 1000000.0f;
-            last_update = now;
 
             //destroy objects as needed
             uint16_t remove_obj_id;
@@ -227,13 +222,16 @@ private:
                 game_object->updateServices(services);
             }
 
+            auto now = std::chrono::steady_clock::now();
+            double delta_time = (double)std::chrono::duration_cast<std::chrono::microseconds>(now - last_update).count() / 1000000.0f;
+            last_update = now;
             //Update objects. No mutex needed as swap happens on this thread.
             for (const auto & [id, game_object] : *objects_buffer_update) {
                 EventList event_list{}; //start with empty event
                 if (object_events.find(id) != object_events.end()) {
                     event_list = object_events[id]; //get associated events
                 }
-                game_object->update(delta_time,event_list,services);
+                game_object->update(delta_time,event_list,services,resource_manager);
             }
             //swap buffers
             swapBuffers();
@@ -248,10 +246,10 @@ public:
      * @param port Port to start server on.
      * Will start running on multiple threads right away.
      */
-    explicit Server(ConnectionManager::Port port)  {
+    explicit Server(ConnectionManager::Port port) : network(port) {
         objects_buffer_update = std::make_unique<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>>();
         objects_buffer_network = std::make_unique<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>>();
-        network_thead = std::thread(&Server::networkThread, this,port);
+        network_thead = std::thread(&Server::networkThread, this);
         update_thread = std::thread(&Server::updateThread, this);
     }
 

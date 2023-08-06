@@ -43,7 +43,7 @@ private:
     GameObject* visible[MAX_VISIBLE_OBJECTS] = {nullptr}; //(write Update thread)
     Services services{};  //(write Update thread)
 
-    std::unique_ptr<ConnectionManager> network; //(Network thread)
+   ConnectionManager network; //(Network thread)
 
     moodycamel::ReaderWriterQueue<std::vector<uint8_t>> incoming_objects{}; //(Network thread -> Update thread)
     moodycamel::ReaderWriterQueue<std::vector<uint8_t>> incoming_state_updates{}; //(Network thread -> Update thread)
@@ -62,10 +62,8 @@ private:
             if(type.type == NEW_OBJECT){
                 incoming_objects.emplace(packet_data);
             }
-            std::cerr << "New object received on network" << "\n";
 
         }else{  //data packet must be state update
-            std::cerr << "New state received on network" << "\n";
             incoming_state_updates.emplace(packet_data);
         }
     }
@@ -75,65 +73,44 @@ private:
     /**
      * Wait for incoming state and send out events
      */
-    void networkThread(const ConnectionManager::Address& address){
-        network = std::make_unique<ConnectionManager>(address);
+    void networkThread(){
         while(running){
-            std::cerr << "Network loop" << "\n"; //todo network loop sometimes only runs once thanks to race conditions
-            //todo check that data propagates and is valid
-            //todo create senario
             //Gather messages
-            network->processIncoming([this](bool TCP, const std::vector<uint8_t>& packet_data,ConnectionManager& manager){
+            network.processIncoming([this](bool TCP, const std::vector<uint8_t>& packet_data,ConnectionManager& manager){
                 this->receiveCallback(TCP,packet_data,manager);
-            },20,8);
+            },50,20);
 
             EventList outgoing_event;
-            while (outgoing_events.try_dequeue(outgoing_event)) {
+            if (outgoing_events.try_dequeue(outgoing_event)) {
                 std::vector<uint8_t> data;
                 ClientEvents events{network_counter,outgoing_event};
                 addStructToPacket(data,events);
-                network->writeUDP(data);
+                network.writeUDP(data);
                 network_counter = (network_counter + 1) % 256; //explicit wrap
             }
+            while(outgoing_events.try_dequeue(outgoing_event)){} //clear events so far. todo find better container
         }
     }
 
     void renderThread(){
         while(running){
-                Camera camera{90,{0,0,1},1}; //todo move camera
-                while(camera_queue.try_dequeue(camera)) {}
+            //todo figure out thread sftey and mover back here
 
-                GameObject::RenderRequest request;
-                while (render_queue.try_dequeue(request)) {
-                    std::lock_guard guard(resource_mutex); //todo optimize
-                    if(request.bones.empty()){
-                        renderer.draw(frame_buffer,resource_manager.readMesh(request.mesh), request.model_transform,resource_manager.readTexture(request.texture));
-                    }else{
-                        renderer.drawSkinned(frame_buffer,resource_manager.readSkinnedMesh(request.mesh), request.model_transform,request.bones,resource_manager.readTexture(request.texture));
-                    }
-                    if(request.last){
-                        window.drawFrameBuffer(frame_buffer);
-                        renderer.clearFrame(frame_buffer, {0,0,0});
-                    }
-                }
         }
     }
 
 public:
 
     //todo doc
-    explicit Client(const ConnectionManager::Address& server_address) {
+    explicit Client(const ConnectionManager::Address& server_address, ConnectionManager::Port client_port = 8081) :network(server_address,client_port) {
         //todo handshake
         window.setMouseRelative();
-        network_thead = std::thread(&Client::networkThread, this,server_address);
+        network_thead = std::thread(&Client::networkThread, this);
         render_thread = std::thread(&Client::renderThread, this);
 
         EventList event;
         auto last_update = std::chrono::steady_clock::now();
         while (window.isOpen(event)) {
-
-            auto now = std::chrono::steady_clock::now();
-            double delta_time = (double)std::chrono::duration_cast<std::chrono::microseconds>(now - last_update).count() / 1000000.0f;
-            last_update = now;
 
             //relay events
             outgoing_events.emplace(event);
@@ -141,39 +118,39 @@ public:
             //init new objects
             std::vector<uint8_t> new_object_data;
             while (incoming_objects.try_dequeue(new_object_data)) {
-                std::cerr << "New object received" << "\n";
                 auto meta_data = extractStructFromPacket<NewObjectMetaData>(new_object_data,sizeof(MessageTypeMetaData));
                 object_cache[meta_data.object_id] = GameObject::instantiateGameObject(meta_data.type_id,new_object_data,sizeof(MessageTypeMetaData) + sizeof(NewObjectMetaData));
                 std::lock_guard guard(resource_mutex);
                 object_cache[meta_data.object_id]->loadResourcesClient(resource_manager,meta_data.is_associated);
                 object_cache[meta_data.object_id]->registerServices(services);
             }
-
             //update state
             std::vector<uint8_t> new_state;
             while (incoming_state_updates.try_dequeue(new_state)) {
-
                 auto meta_data = extractStructFromPacket<StateMetaData>(new_state,0);
+                if(object_cache.find(meta_data.object_id) == object_cache.end()) continue;
                 object_cache[meta_data.object_id]->deserialize(new_state,sizeof(StateMetaData));
                 assert(meta_data.buffer_location < MAX_VISIBLE_OBJECTS);
                 visible[meta_data.buffer_location] = object_cache[meta_data.object_id].get();
             }
 
+            auto now = std::chrono::steady_clock::now();
+            double delta_time = (double)std::chrono::duration_cast<std::chrono::microseconds>(now - last_update).count() / 1000000.0f;
+            last_update = now;
             //predict
             for (auto & i : visible) {
                 if(i != nullptr){
-                    i->predict(delta_time,event,services);
+                    i->predict(delta_time,event,services,resource_manager);
                 }
             }
-
-            //render
-            bool first = true;
+            renderer.clearFrame(frame_buffer, {0,0,0});
             for (auto & i : visible) {
                 if(i != nullptr){
-                    i->render(render_queue,camera_queue,first); //Using first instead of last
-                    if(first) first= false;
+                   // std::lock_guard guard(resource_mutex);
+                    i->render(renderer,frame_buffer,resource_manager); //Using first instead of last
                 }
             }
+            window.drawFrameBuffer(frame_buffer);
 
         }
         stop();
