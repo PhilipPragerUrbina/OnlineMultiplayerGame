@@ -121,7 +121,7 @@ public:
             if(main_player){
                 renderer.setCamera(camera);
             }else{
-                renderer.draw(frame_buffer,manager.readMesh(mesh),glm::translate(glm::identity<glm::mat4>(),position),manager.readTexture(texture));
+                renderer.draw(frame_buffer,manager.readMesh(mesh),glm::lookAt(position,position+direction,{0,0,1}),manager.readTexture(texture));
             }
     }
 
@@ -146,7 +146,6 @@ protected:
 
     void predictInternal(double delta_time, const EventList &events, const Services &services,
                          const ResourceManager &resource_manager) override {
-        std::cout << "delta time " << delta_time << "\n";
         if(main_player){
             direction = glm::normalize(direction);
             camera.setPosition(position);

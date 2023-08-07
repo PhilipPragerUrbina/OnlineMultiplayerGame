@@ -78,7 +78,7 @@ private:
             //Gather messages
             network.processIncoming([this](bool TCP, const std::vector<uint8_t>& packet_data,ConnectionManager& manager){
                 this->receiveCallback(TCP,packet_data,manager);
-            },50,20);
+            },tick_rate,50);
 
             EventList outgoing_event;
             if (outgoing_events.try_dequeue(outgoing_event)) {

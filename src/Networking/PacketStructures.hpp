@@ -9,6 +9,10 @@
 #include <cassert>
 #include "../Events/EventList.hpp"
 
+//Tick rate in milliseconds
+//todo doc more
+const uint32_t tick_rate = 15;
+
 /**
  * Additional metadata packaged into outgoing packets that pass game object state.
  */

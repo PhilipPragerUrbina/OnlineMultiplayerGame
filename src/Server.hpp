@@ -147,7 +147,7 @@ private:
                         this->receiveCallback(TCP,client_id,packet_data,manager);
                 },[this](u_long client_id,ConnectionManager& manager,bool disconnect){
                     this->connectionCallback(client_id,manager,disconnect);
-                },50,20); //todo check tick
+                },tick_rate,50); //todo check tick
 
             //Send messages
             for (auto& [client_id, client] : clients) {
