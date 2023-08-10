@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
   //  std::cin >> port;
 
     try {
-        Client client{ConnectionManager::getAddress(8080, ip),8081};
+        Client client{ConnectionManager::getAddress(8080, ip)};
     } catch (const std::runtime_error& error){
         std::cout << error.what() << "\n";
         goto start;

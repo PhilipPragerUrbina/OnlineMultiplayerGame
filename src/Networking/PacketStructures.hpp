@@ -4,14 +4,22 @@
 
 #pragma once
 
-
 #include <cstdint>
 #include <cassert>
 #include "../Events/EventList.hpp"
 
-//Tick rate in milliseconds
-//todo doc more
-const uint32_t tick_rate = 15;
+//This file defines the shared configurations between the client and server
+
+/**
+ * The tick rate in milliseconds.
+ * @details How long to wait for new packets before updating other threads.
+ */
+const uint32_t TICK_RATE = 15;
+
+/**
+ * Network protocol version
+ */
+const uint16_t PROTOCOL_VERSION = 0;
 
 /**
  * Additional metadata packaged into outgoing packets that pass game object state.
@@ -51,7 +59,7 @@ struct MessageTypeMetaData{
  * Client information
  */
 struct HandShake {
-    int version;
+    uint16_t version;
 };
 
 /**
@@ -71,7 +79,7 @@ struct ClientEvents {
 template <class T> void addStructToPacket(std::vector<uint8_t>& packet, const T& data){
     packet.reserve(packet.size() + sizeof(T));
     for (size_t i = 0; i < sizeof(T); ++i) {
-        packet.push_back(((const uint8_t*)&data)[i]); //todo check
+        packet.push_back(((const uint8_t*)&data)[i]);
     }
 }
 
@@ -83,8 +91,8 @@ template <class T> void addStructToPacket(std::vector<uint8_t>& packet, const T&
  * @return Struct copied from the packet.
  */
 template <class T> T extractStructFromPacket(const std::vector<uint8_t>& packet, size_t begin){
-    assert(packet.size() >= sizeof(T));
+    assert(packet.size() >= sizeof(T)); //todo check
     T value{};
-    memcpy(&value, packet.data()+begin, sizeof(T)); //todo check
+    memcpy(&value, packet.data()+begin, sizeof(T));
     return value;
 }

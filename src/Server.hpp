@@ -25,6 +25,7 @@ struct ClientInfo{
     std::unordered_set<uint16_t> associated_objects{}; //Objects assigned to this client. Always visible and are relayed events from a client.
     uint8_t current_event_counter = 0; //Counter of current event to make sure new events are more recent
     std::unordered_set<uint16_t> cached_objects; //Objects the client has been told to instantiate.
+    bool handshake = false;
 };
 /**
  * Keeps game state and simulates a game world.
@@ -51,7 +52,6 @@ private:
     std::atomic<ObjectID> latest_object_id = 0; //Latest available object id. (Network thread & Update thread)
     ResourceManager resource_manager{}; //Shared between game objects read only resources (Network)
 
-    static const int VERSION = 0; //Version to check for compatibility (Network thread)
 
     std::unique_ptr<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>> objects_buffer_network; //Game object buffer for both threads to READ (Network thread & Update thread)
     std::unique_ptr<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>> objects_buffer_update; //Game object buffer to be written to by update thread(Update thread)
@@ -86,9 +86,11 @@ private:
 
             if(type.type == HANDSHAKE){
                 auto hand_shake = extractStructFromPacket<HandShake>(packet_data,sizeof(MessageTypeMetaData));
-                if(hand_shake.version != VERSION){
+                if(hand_shake.version != PROTOCOL_VERSION){
                     //todo disconnect client and make sure to do the same things as in the connectCallback. Also make sure it wont mess anything up in the connection manager and document.
                     std::cerr << "Warning: Client " << client_id << " has mismatched version \n";
+                }else{
+                    clients[client_id].handshake = true;
                 }
                 std::cout << "Client " << client_id << " has handshake \n";
             }
@@ -97,7 +99,8 @@ private:
             auto client_message = extractStructFromPacket<ClientEvents>(packet_data,0);
             ClientInfo& client = clients[client_id];
 
-            if(client_message.counter > client.current_event_counter || client_message.counter == 0){ //If more recent. Taking into account wrapping.
+            //todo check that wrapping == 0 check is working properly since there are occasional stutters
+            if(client_message.counter >= client.current_event_counter || client_message.counter == 0){ //If more recent. Taking into account wrapping.
                 client.current_event_counter = client_message.counter;
                 for (const ObjectID & object_id : client.associated_objects) {
                     incoming_events.emplace(object_id,client_message.list);
@@ -147,10 +150,11 @@ private:
                         this->receiveCallback(TCP,client_id,packet_data,manager);
                 },[this](u_long client_id,ConnectionManager& manager,bool disconnect){
                     this->connectionCallback(client_id,manager,disconnect);
-                },tick_rate,50); //todo check tick
+                },TICK_RATE,50); //todo check tick
 
             //Send messages
             for (auto& [client_id, client] : clients) {
+                if(!client.handshake) continue;
                 //todo get visible list based on frustum culling + associated objects
                 //todo max buffer size
                 uint8_t buffer_location = 0;

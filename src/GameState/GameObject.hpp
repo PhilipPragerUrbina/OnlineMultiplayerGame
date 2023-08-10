@@ -70,10 +70,11 @@ public:
      * Use packet data to update game object state.
      * @param packet Packet containing state struct.
      * @param begin Byte where the state struct begins in data.
+     * @param counter Counter sent to only apply update if more recent
      * @warning Assumes the game object type has already been verified.
-     * @warning Should only be called by network thread.
      */
-    virtual void deserialize(const std::vector<uint8_t>& packet, size_t begin) = 0;
+    virtual void deserialize(const std::vector<uint8_t>& packet, size_t begin, uint8_t counter) = 0;
+    //todo update doc here since this stuff all happens on update thread
 
     /**
      * Load in textures, meshes, physics meshes. (For the client)
@@ -116,7 +117,6 @@ public:
      * @param events Events that the client is inputting.
      * @param services Use this to query services. This is for reading only, see updateServices() for writing to services.
      * @param resource_manager Get read only resources like physics meshes.
-     * Will predict game state and apply new server state.
      */
     virtual void predict(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
 
@@ -140,7 +140,7 @@ public:
      * @warning No game state should be changed here. This is read-only,for thread safety reasons.
      * @param renderer The renderer to render your meshes with.
      */
-    virtual void render( Renderer& renderer, FrameBuffer& frame_buffer, const ResourceManager& resource_manager) const = 0;
+    virtual void render( Renderer& renderer, const ResourceManager& resource_manager) const = 0;
     //todo change to better and doc
 
     /**
@@ -190,23 +190,7 @@ private:
     //Should be specialized such that it is a separate static instance for each game object type.
     inline static StaticTypeConstructor<SELF> static_type_constructor{};
 
-    // Keep a FIFO style buffer between network thread and prediction thread.
-    STATE state_buffer;//Written by network thread and read by prediction thread.
-    //Check for changes in thread safe way.
-    int state_update_count = 0; //Written by network thread and read by prediction thread.
-    int last_state_update_count = 0; //Read and write by prediction thread.
-
-    /**
-     * @warning Should only be called by prediction thread
-     * Transfer server state to override prediction state(If available).
-     */
-    void sync(){
-        static_type_constructor; //use it or lose it. todo make sure this is not optimized away
-        if(state_update_count != last_state_update_count){
-            deserializeInternal(state_buffer);
-            last_state_update_count++;
-        }
-    }
+    uint8_t last_counter = 0;
 
 protected:
 
@@ -262,7 +246,9 @@ public:
     /**
      * @warning The child must implement a default constructor.
      */
-    GameObjectImpl() = default;
+    GameObjectImpl() {
+        static_type_constructor; //use it or lose it. todo make sure this is not optimized away
+    };
 
 
     [[nodiscard]] std::unique_ptr<GameObject> createNew(const std::vector<uint8_t>& packet, size_t begin) const override {
@@ -281,15 +267,17 @@ public:
         addStructToPacket(packet,state);
     }
 
-    void deserialize(const std::vector<uint8_t>& packet, size_t begin) override {
-        state_buffer = extractStructFromPacket<STATE>(packet,begin);
-        state_update_count++;
+    void deserialize(const std::vector<uint8_t>& packet, size_t begin,uint8_t counter) override {
+        if(counter >= last_counter || counter == 0){
+            STATE state_buffer = extractStructFromPacket<STATE>(packet,begin);
+            deserializeInternal(state_buffer);
+            last_counter = counter;
+        }
     }
 
 
     void predict(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) override {
         predictInternal(delta_time,events, services,resource_manager);
-        sync();
     }
 
     ~GameObjectImpl() override= default;

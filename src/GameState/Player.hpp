@@ -68,22 +68,22 @@ public:
         velocity = {0,0,0};
 
         //interpolate between polling
-        if(events.buttons[0]){
+        if(events.keys[0]){
             velocity += glm::vec3 {direction.x,direction.y,0} * speed;
         }
-        if(events.buttons[1]){
+        if(events.keys[1]){
             velocity += -glm::vec3 {direction.x,direction.y,0} * speed;
         }
-        if(events.buttons[2]){
+        if(events.keys[2]){
             velocity += -glm::vec3{direction.y,-direction.x,0}* speed;
         }
-        if(events.buttons[3]){
+        if(events.keys[3]){
             velocity += glm::vec3{direction.y,-direction.x,0}* speed;
         }
-        if(events.buttons[4]){
+        if(events.keys[4]){
             velocity += glm::vec3{0,0,-1}* speed;
         }
-        if(events.buttons[5]){
+        if(events.keys[5]){
             velocity += glm::vec3{0,0,1}* speed;
         }
 
@@ -117,14 +117,15 @@ public:
         //nothing
     }
 
-    void render(Renderer& renderer,FrameBuffer& frame_buffer, const ResourceManager& manager) const override {
+    void render(Renderer& renderer, const ResourceManager& manager) const override {
             if(main_player){
                 renderer.setCamera(camera);
             }else{
-                renderer.draw(frame_buffer,manager.readMesh(mesh),glm::inverse(glm::lookAt(position,position+glm::vec3 (direction.y,direction.x,-direction.z),{0,0,1})),manager.readTexture(texture));
+                renderer.queueDraw(manager.readMesh(mesh),glm::inverse(glm::lookAt(position,position+glm::vec3 (-direction.y,direction.x,direction.z),{0,0,1})),manager.readTexture(texture));
             }
     }
-
+    //todo object initialization is somewhat of a network race condition. Add on server such that it gets through.
+    //todo make disconnect more robust by checking on client side
     SphereBV getBounds() const override {
         return hitbox;
     }
@@ -147,6 +148,7 @@ protected:
     void predictInternal(double delta_time, const EventList &events, const Services &services,
                          const ResourceManager &resource_manager) override {
         if(main_player){
+            std::cout << "delta time " << delta_time << "\n";
             direction = glm::normalize(direction);
             camera.setPosition(position);
             camera.setLookAt(position + direction);
@@ -155,22 +157,22 @@ protected:
             velocity = {0,0,0};
 
             //interpolate between polling
-            if(events.buttons[0]){
+            if(events.keys[0]){
                 velocity += glm::vec3 {direction.x,direction.y,0} * speed;
             }
-            if(events.buttons[1]){
+            if(events.keys[1]){
                 velocity += -glm::vec3 {direction.x,direction.y,0} * speed;
             }
-            if(events.buttons[2]){
+            if(events.keys[2]){
                 velocity += -glm::vec3{direction.y,-direction.x,0}* speed;
             }
-            if(events.buttons[3]){
+            if(events.keys[3]){
                 velocity += glm::vec3{direction.y,-direction.x,0}* speed;
             }
-            if(events.buttons[4]){
+            if(events.keys[4]){
                 velocity += glm::vec3{0,0,-1}* speed;
             }
-            if(events.buttons[5]){
+            if(events.keys[5]){
                 velocity += glm::vec3{0,0,1}* speed;
             }
 

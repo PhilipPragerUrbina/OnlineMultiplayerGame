@@ -14,7 +14,7 @@ class FrameBuffer {
 private:
     std::vector<glm::vec4> pixels; // r,g,b,depth
     std::vector<uint8_t> bit_pixels; //rgba
-    const int width,height;
+    int width{},height{};
 public:
 
     /**
@@ -28,6 +28,11 @@ public:
             pixel = default_value;
         }
     }
+
+    //todo review
+    FrameBuffer(){
+
+    };
 
     /**
      * Get pixel value at coordinate

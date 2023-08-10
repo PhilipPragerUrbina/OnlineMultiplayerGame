@@ -59,6 +59,10 @@ public:
      * Represents a socket ID
      */
     typedef SOCKET Socket;
+    /**
+     * Bytes
+     */
+    typedef std::vector<uint8_t> RawData;
 private:
     /**
      * Represents a single server-client connection
@@ -90,12 +94,12 @@ private:
     * @param sender_address_out Outputs address of sender.
     * @return Vector containing data. Will return empty data if client disconnect or error.
     */
-    std::vector<uint8_t> readUDP(Address& sender_address_out) {
+    RawData readUDP(Address& sender_address_out) {
         int address_size = sizeof(sender_address_out);
         int size  = recvfrom(data_socket, buffer, MAX_PACKET_SIZE, 0 , (SOCKADDR*)&sender_address_out, &address_size);
         if(size <= 0 ) return {};
         //copy data from buffer
-        std::vector<uint8_t> raw_data(size);
+        RawData raw_data(size);
         for (int i = 0; i < size; ++i) {
             raw_data[i] = buffer[i];
         }
@@ -107,11 +111,11 @@ private:
      * @param socket TCP socket.
      * @return Vector containing data. Will return empty data if an orderly client disconnect or error.
      */
-    std::vector<uint8_t> readTCP(Socket socket) {
+    RawData readTCP(Socket socket) {
         int size  = recv(socket, buffer, MAX_PACKET_SIZE,0);
         if(size <= 0 ) return {};
         //copy data from buffer
-        std::vector<uint8_t> raw_data(size);
+        RawData raw_data(size);
         for (int i = 0; i < size; ++i) {
             raw_data[i] = buffer[i];
         }
@@ -124,7 +128,7 @@ private:
      * @param data Data to write.
      * @return True, if sent successfully, false if an error (such as client disconnect).
      */
-    static bool writeTCP(Socket socket, const std::vector<uint8_t>& data){
+    static bool writeTCP(Socket socket, const RawData& data){
         int bytes_sent = send(socket, (const char *)(data.data()), (int)data.size(), 0);
         return bytes_sent == (int)data.size();
     }
@@ -135,7 +139,7 @@ private:
      * @param data Data to write.
      * @return True, if sent successfully, false if an error.
      */
-    bool writeUDP(const Address& address, const std::vector<uint8_t>& data) const{
+    bool writeUDP(const Address& address, const RawData& data) const{
         int bytes_sent = sendto(data_socket, (const char *)(data.data()), (int)data.size(), 0,(const SOCKADDR * )(&address), sizeof(address));
         return bytes_sent == (int)data.size();
     }
@@ -233,7 +237,7 @@ public:
      * @param max_packets The maximum number of simultaneous or consecutive UDP packets that would be expected to arrive within the timeout. Just used as an upper bound for how many times to select.
      * @throw runtime_error Error regarding socket selection or connection. If a problem is encountered with a specific client, no error will be thrown, the client will just be considered disconnected. (Handle using disconnect callback).
      */
-    void processIncoming(const std::function<void(bool TCP, u_long client_id, const std::vector<uint8_t>& packet_data,ConnectionManager& manager)>& receive_callback,
+    void processIncoming(const std::function<void(bool TCP, u_long client_id, const RawData& packet_data,ConnectionManager& manager)>& receive_callback,
                          const std::function<void(u_long client_id,ConnectionManager& manager,bool disconnect)>& connection_callback,
                          int timeout_ms = 50, int max_packets = 20){
         assert(server);
@@ -275,7 +279,7 @@ public:
                     FD_CLR(data_socket,&watching_connections); //Remove from the set
 
                     Address udp_address;
-                    std::vector<uint8_t> data = readUDP(udp_address);
+                    RawData data = readUDP(udp_address);
                     if(!data.empty() && active_connections.find(udp_address.sin_addr.s_addr) != active_connections.end()){ //Must be from existing connection
                         receive_callback(false,udp_address.sin_addr.s_addr,data,*this);
                     }
@@ -284,7 +288,7 @@ public:
                     for (const auto & [ id, connection ] : active_connections) {
                         if(FD_ISSET(connection.child_socket_tcp,&watching_connections)){ //Incoming TCP packet
                             FD_CLR(connection.child_socket_tcp,&watching_connections); //Remove from the set
-                            std::vector<uint8_t> data = readTCP(connection.child_socket_tcp);
+                            RawData data = readTCP(connection.child_socket_tcp);
                             if(data.empty()){ //disconnect
                                 connection_callback(id,*this,true);
                                 sockets_to_close.push_back(id);
@@ -314,7 +318,7 @@ public:
      * @throw runtime_error Error regarding socket selection or connection.
      * @return False if server is disconnected.
      */
-    bool processIncoming(const std::function<void(bool TCP, const std::vector<uint8_t>& packet_data,ConnectionManager& manager)>& receive_callback,int timeout_ms = 50, int max_packets = 20){
+    bool processIncoming(const std::function<void(bool TCP, const RawData& packet_data,ConnectionManager& manager)>& receive_callback,int timeout_ms = 50, int max_packets = 20){
         assert(!server);
         //Collect multiple messages from one socket if needed
         for (int i = 0; i < max_packets; ++i) {
@@ -336,14 +340,14 @@ public:
             for (int j = 0; j < active; ++j) {
                if(FD_ISSET(data_socket,&watching_connections)){  //Incoming data packet
                     Address udp_address;
-                    std::vector<uint8_t> data = readUDP(udp_address);
+                    RawData data = readUDP(udp_address);
 
                     if(!data.empty()){
                         receive_callback(false,data,*this);
                     }
                     FD_CLR(data_socket,&watching_connections); //Remove from the set
                 } else if(FD_ISSET(main_socket,&watching_connections)){ //Incoming TCP packet
-                    std::vector<uint8_t> data = readTCP(main_socket);
+                    RawData data = readTCP(main_socket);
 
                     if(data.empty()){ //disconnect
                         return false;
@@ -364,7 +368,7 @@ public:
      * @param client_id Valid client ID to write to.
      * @param data Data to write.
      */
-    void writeUDP(u_long client_id, const std::vector<uint8_t>& data) {
+    void writeUDP(u_long client_id, const RawData& data) {
         assert(server);
         writeUDP(active_connections[client_id].other_address,data);
     }
@@ -376,7 +380,7 @@ public:
      * @param data Data to write.
      * @return True if sent successfully. False probably indicates a client disconnect or network issue.
      */
-    bool writeTCP(u_long client_id, const std::vector<uint8_t>& data) {
+    bool writeTCP(u_long client_id, const RawData& data) {
         assert(server);
         return writeTCP(active_connections[client_id].child_socket_tcp,data);
     }
@@ -387,7 +391,7 @@ public:
      * @param data Data to write.
      * @return True if sent successfully. False probably indicates a server disconnect or network issue.
      */
-    bool writeTCP(const std::vector<uint8_t>& data) const{
+    bool writeTCP(const RawData& data) const{
         assert(!server);
         return writeTCP(main_socket,data);
     }
@@ -397,7 +401,7 @@ public:
      * @warning Must be a client.
      * @param data Data to write.
      */
-    void writeUDP(const std::vector<uint8_t>& data){
+    void writeUDP(const RawData& data){
         assert(!server);
         writeUDP(server_address,data);
     }

@@ -11,7 +11,6 @@
 #include "FrameBuffer.hpp"
 #include "Mesh.hpp"
 #include "SkinnedMesh.hpp"
-#include "../Physics/SDFCollision.hpp"
 
 /**
  * Enable backface culling. Beware of winding order.
@@ -22,10 +21,51 @@ const bool BACKFACE_CULLING = true;
  * A Multithreading Software rasterizer
  */
 class Renderer {
+public:
+    /**
+     * Max threads for rendering
+     */
+    const static int MAX_THREADS = 4;
 private:
-    Camera camera;
-    float near_plane{},far_plane{}; //todo combine
-    VertexShader vertex_shader{};
+    Camera camera; //Camera used for rendering
+
+    /**
+     * A request to draw an object
+     */
+    struct DrawCall{
+        const Mesh* mesh;
+        const glm::mat4 model_transform;
+        const Texture* texture;
+        size_t start; //Start triangle in mesh
+        size_t end; //End triangle(not inclusive)
+    };
+
+    /**
+     * Data specific to each render thread
+     */
+    struct ThreadData{
+        FrameBuffer frame_buffer{};
+        std::vector<DrawCall> tasks{};
+        VertexShader vertex_shader{};
+    };
+
+    std::vector<DrawCall> incoming_tasks{}; //Main task list
+    std::array<ThreadData,MAX_THREADS> thread_data{};
+    std::array<std::thread,MAX_THREADS> thread_pool{};
+
+
+    /**
+     * Renders draw calls
+     * @param id Thread location in pool
+     */
+    void renderThread(int id){
+        thread_data[id].vertex_shader.setCamera(camera);
+        clearFrame(thread_data[id].frame_buffer,{0,0,0});
+        for(const DrawCall& draw_call : thread_data[id].tasks){
+            draw(thread_data[id].frame_buffer,draw_call.mesh,draw_call.model_transform,draw_call.texture,thread_data[id].vertex_shader, draw_call.start,draw_call.end);
+        }
+        thread_data[id].tasks.clear();
+    }
 
     /**
        * Get interpolated value
@@ -139,7 +179,7 @@ private:
         glm::vec3 screen_space[3];
         for (int i = 0; i < 3; ++i) {
             screen_space[i] = clip_tri.pos[i] / clip_tri.pos[i].w; //normalize with w
-            screen_space[i] = {(screen_space[i].x + 1.0) * ((float)frame_buffer.getWidth()/2.0f),(screen_space[i].y + 1.0) * ((float)frame_buffer.getHeight()/2.0f), (screen_space[i].z+1.0f) * (far_plane - near_plane)/2.0f + near_plane};
+            screen_space[i] = {(screen_space[i].x + 1.0) * ((float)frame_buffer.getWidth()/2.0f),(screen_space[i].y + 1.0) * ((float)frame_buffer.getHeight()/2.0f), (screen_space[i].z+1.0f) * (camera.getFarPlane() - camera.getNearPlane())/2.0f + camera.getNearPlane()};
         }
         //get bounding box(also clamp to screen bounds)
         glm::int2 box_min = max(min(min(screen_space[0], screen_space[1]),screen_space[2]), {0,0,0});
@@ -189,11 +229,11 @@ private:
         //Get intersection with line xz
         float slope_1 = (a.z-b.z)/(a.x-b.x);
         // z = m(x-x1)+z1, near = m(x-x1)+z1, (near-z1)/m+x1  = x
-        float x = (-near_plane-a.z)/slope_1 + a.x;
+        float x = (-camera.getNearPlane()-a.z)/slope_1 + a.x;
         //Get intersection with line yz
         float slope_2 = (a.z-b.z)/(a.y-b.y);
-        float y = (-near_plane-a.z)/slope_2 + a.y;
-        return {x,y,-near_plane,1}; //W is always 1 in view space. Z must be on the plane.
+        float y = (-camera.getNearPlane()-a.z)/slope_2 + a.y;
+        return {x,y,-camera.getNearPlane(),1}; //W is always 1 in view space. Z must be on the plane.
     }
 
 
@@ -207,7 +247,7 @@ private:
         std::vector<int> inside;
         std::vector<int> outside;
         for (int i = 0; i < 3; ++i) {
-            if(view_tri.pos[i].z < -near_plane){
+            if(view_tri.pos[i].z < -camera.getNearPlane()){
                 inside.push_back(i);
             }else{
                 outside.push_back(i);
@@ -243,39 +283,110 @@ private:
         return {};
     }
 
-public:
     /**
-     * Create a renderer
-     * @param camera Starting camera
-     */
-    explicit Renderer(const Camera& camera) :camera(camera){
-        setCamera(camera);
-    }
-
-    /**
-     * Set the current camera
-     */
-    void setCamera(const Camera& new_camera) {
-        near_plane = new_camera.getNearPlane();
-        far_plane = new_camera.getFarPlane();
-        camera = new_camera;
-        if(camera.getPosition() == glm::vec3 {0,0,0}) camera.setPosition({0.01,0.01,0.01});
-        vertex_shader.setCamera(camera);
-    }
-
-    /**
-     * Prepare a frame for rendering
-     * @param frame_buffer Frame buffer to render to
-     */
+    * Prepare a frame for rendering
+    * @param frame_buffer Frame buffer to render to
+    */
     void clearFrame(FrameBuffer& frame_buffer,const glm::vec3& background_color) const {
         for (int x = 0; x < frame_buffer.getWidth(); ++x) {
             for (int y = 0; y < frame_buffer.getHeight(); ++y) {
-                frame_buffer.setPixel(x,y,{background_color,far_plane});
+                frame_buffer.setPixel(x,y,{background_color,camera.getFarPlane()});
             }
         }
     }
 
-    //todo move to gpu backen
+    /**
+    * Draw a skinned mesh. Can be called multiple times per frame. Make sure to clear the frame every frame.
+    * @param frame_buffer Frame buffer to draw to.
+    * @param mesh Skinned Mesh to draw. Make sure texture ids match the renderer texture buffer.
+    * @param model_transform Transform of mesh.
+     * @param bones Bones to pose skinned mesh with their final transforms. Must be meant for the mesh.
+     * @param texture Texture to use for rendering
+     * @param shader Vertex shader with the camera set. This method will set the model transform.
+    */
+    void drawSkinned(FrameBuffer& frame_buffer, const SkinnedMesh* mesh, const glm::mat4& model_transform, const std::vector<glm::mat4>& bones, const Texture* texture, VertexShader& vertex_shader) const{
+        assert(mesh->num_bones == (int)bones.size());
+        vertex_shader.setModelTransform(model_transform);
+        for (const SkinnedTriangle& triangle : mesh->tris) {
+            Triangle view_tri = vertex_shader.toViewSpaceSkinned(triangle, bones); //Geometry shader
+            std::vector<Triangle> clipped_view_tris = clip(view_tri);
+            for (const Triangle& clipped_view_tri : clipped_view_tris) {
+                Triangle clip_tri = vertex_shader.toClipSpace(clipped_view_tri); //Project
+                rasterize(clip_tri,frame_buffer,texture);
+            }
+        }
+    }
+
+
+
+
+    /**
+     * Combine right frame buffer into the left
+     * @warning Must be the same size
+     */
+    static void combineFrameBuffers(FrameBuffer& left, const FrameBuffer& right){
+        for (int x = 0; x < left.getWidth(); ++x) { //todo check cache efficiency
+            for (int y = 0; y < left.getHeight(); ++y) {
+                left.setPixelIfDepth(x,y,right.getPixel(x,y));
+            }
+        }
+    }
+
+public:
+    /**
+     * Create a renderer
+     * @param camera Starting camera
+     * @param width,height Resolution in pixels
+     */
+    explicit Renderer(const Camera& camera, int width, int height) :camera(camera) {
+        setCamera(camera);
+        for(ThreadData& data : thread_data){
+            data.frame_buffer = FrameBuffer(width,height,{0,0,0,0});
+        }
+    }
+
+    /**
+     * Set the current camera
+     * @details Will override the last camera set
+     */
+    void setCamera(const Camera& new_camera) {
+        camera = new_camera;
+    }
+
+    /**
+  * Draw a mesh. Can be called multiple times per frame. Make sure to clear frame every frame.
+  * @param frame_buffer Frame buffer to draw to.
+  * @param mesh Mesh to draw.
+  * @param model_transform Transform of mesh.
+  * @param texture Texture to use for rendering
+  *  @param shader Vertex shader with the camera set. This method will set the model transform.
+  */
+    void draw(FrameBuffer& frame_buffer, const Mesh* mesh, const glm::mat4& model_transform ,const Texture* texture, VertexShader& vertex_shader, size_t start, size_t end)  const {
+        vertex_shader.setModelTransform(model_transform);
+        for (size_t i = start; i < end; ++i) { //todo doc
+            const Triangle& triangle = mesh->tris[i];
+            Triangle view_tri = vertex_shader.toViewSpace(triangle); //Geometry shader
+            std::vector<Triangle> clipped_view_tris = clip(view_tri);
+            for (const Triangle& clipped_view_tri : clipped_view_tris) {
+                Triangle clip_tri = vertex_shader.toClipSpace(clipped_view_tri); //Project
+                rasterize(clip_tri,frame_buffer,texture);
+            }
+        }
+    }
+
+    //todo queueSkinnedDraw
+
+    /**
+     * Draw a mesh
+     * @param mesh Mesh to draw
+     * @param model_transform Transform of mesh
+     * @param texture Texture to use for rendering
+     */
+    void queueDraw(const Mesh* mesh, const glm::mat4& model_transform ,const Texture* texture){
+        incoming_tasks.push_back(DrawCall{mesh,model_transform,texture,0,mesh->tris.size()});
+    }
+
+    //todo move to gpu backend
     /**
     * Ray march an SDF into the framebuffer
      * @param frame_buffer Frame buffer to render to
@@ -313,47 +424,56 @@ public:
     }
     */
 
-
-
-
     /**
-    * Draw a skinned mesh. Can be called multiple times per frame. Make sure to clear frame every frame.
-    * @param frame_buffer Frame buffer to draw to.
-    * @param mesh Skinned Mesh to draw. Make sure texture ids match the renderers texture buffer.
-    * @param model_transform Transform of mesh.
-     * @param bones Bones to pose skinned mesh with their final transforms. Must be meant for the mesh.
-     * @param texture Texture to use for rendering
-    */
-    void drawSkinned(FrameBuffer& frame_buffer, const SkinnedMesh* mesh, const glm::mat4& model_transform, const std::vector<glm::mat4>& bones, const Texture* texture) {
-        assert(mesh->num_bones == (int)bones.size());
-        vertex_shader.setModelTransform(model_transform);
-        for (const SkinnedTriangle& triangle : mesh->tris) {
-            Triangle view_tri = vertex_shader.toViewSpaceSkinned(triangle, bones); //Geometry shader
-            std::vector<Triangle> clipped_view_tris = clip(view_tri);
-            for (const Triangle& clipped_view_tri : clipped_view_tris) {
-                Triangle clip_tri = vertex_shader.toClipSpace(clipped_view_tri); //Project
-                rasterize(clip_tri,frame_buffer,texture);
-            }
-        }
-    }
-
-
-    /**
-     * Draw a mesh. Can be called multiple times per frame. Make sure to clear frame every frame.
-     * @param frame_buffer Frame buffer to draw to.
-     * @param mesh Mesh to draw. Make sure texture ids match the renderers texture buffer.
-     * @param model_transform Transform of mesh.
-     * @param texture Texture to use for rendering
+     * Get the result of the render and wait for it to finish
+     * @param frame_buffer Frame buffer to write the result to. Must be same dimensions as renderer.
      */
-    void draw(FrameBuffer& frame_buffer, const Mesh* mesh, const glm::mat4& model_transform ,const Texture* texture)  {
-        vertex_shader.setModelTransform(model_transform);
-        for (const Triangle& triangle : mesh->tris) {
-            Triangle view_tri = vertex_shader.toViewSpace(triangle); //Geometry shader
-            std::vector<Triangle> clipped_view_tris = clip(view_tri);
-            for (const Triangle& clipped_view_tri : clipped_view_tris) {
-                Triangle clip_tri = vertex_shader.toClipSpace(clipped_view_tri); //Project
-                rasterize(clip_tri,frame_buffer,texture);
+    void getResult(FrameBuffer& frame_buffer){
+        size_t num_triangles = 0;
+        for (const DrawCall& draw_call : incoming_tasks) {
+                num_triangles += draw_call.mesh->tris.size();
+        }
+
+        size_t max_tris_per_thread = num_triangles/MAX_THREADS + 5;
+
+        int current_thread = 0;
+      size_t triangles_in_current_thread = 0;
+        for (size_t i = 0; i <  incoming_tasks.size(); ++i) {
+            if((incoming_tasks[i].end - incoming_tasks[i].start) <= 0) continue;
+
+            if( (incoming_tasks[i].end - incoming_tasks[i].start)  + triangles_in_current_thread < max_tris_per_thread){
+                thread_data[current_thread].tasks.push_back( incoming_tasks[i]);
+                triangles_in_current_thread +=   (incoming_tasks[i].end - incoming_tasks[i].start);
+            }else{
+                //split
+                //todo sometimes not split
+                DrawCall draw_call_a =  incoming_tasks[i];
+               draw_call_a.end = max_tris_per_thread - triangles_in_current_thread + draw_call_a.start;
+                thread_data[current_thread].tasks.push_back(draw_call_a);
+                incoming_tasks[i].start =  draw_call_a.end;
+                i--;
+                current_thread++;
+                triangles_in_current_thread = 0;
             }
         }
+
+        for (int i = 0; i < MAX_THREADS; ++i) {
+            thread_pool[i] = std::thread(&Renderer::renderThread,this, i);
+        }
+
+        for (int i = 0; i < MAX_THREADS; ++i) {
+            thread_pool[i].join();
+        }
+
+        //Combine frame buffers
+       for (int i = MAX_THREADS-1; i >= 1; --i) {
+            combineFrameBuffers(thread_data[i-1].frame_buffer,thread_data[i].frame_buffer);
+        }
+       frame_buffer = thread_data[0].frame_buffer;
+
+        incoming_tasks.clear();
+
     }
+
+
 };

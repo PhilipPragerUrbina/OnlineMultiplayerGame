@@ -47,9 +47,8 @@ public:
     }
 
 
-    void render(Renderer& renderer,FrameBuffer& frame_buffer, const ResourceManager& manager) const override {
-;
-            renderer.draw(frame_buffer,manager.readMesh(mesh),glm::scale(glm::identity<glm::mat4>(),{10,10,10}),manager.readTexture(texture));
+    void render(Renderer& renderer, const ResourceManager& manager) const override {
+            renderer.queueDraw(manager.readMesh(mesh),glm::scale(glm::identity<glm::mat4>(),{10,10,10}),manager.readTexture(texture));
     }
 
     SphereBV getBounds() const override {

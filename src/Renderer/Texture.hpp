@@ -36,9 +36,6 @@ public:
      * @return True if transparent
      */
     [[nodiscard]] bool isTransparent(int x,int y) const {
-        if(!(x >= 0 && x < width)){
-            std::cerr << x << " / " << width << "\n";
-        }
         assert(x >= 0 && x < width);
         assert(y >= 0 && y < height);
         if(channels < 4) return false;
