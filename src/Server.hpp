@@ -16,6 +16,7 @@
 #include "Networking/ConnectionManager.hpp"
 #include "GameState/GameMap.hpp"
 #include "GameState/Player.hpp"
+#include "GameState/AIPlayer.hpp"
 
 /**
  * Contains information about a client
@@ -99,13 +100,13 @@ private:
             auto client_message = extractStructFromPacket<ClientEvents>(packet_data,0);
             ClientInfo& client = clients[client_id];
 
-            //todo check that wrapping == 0 check is working properly since there are occasional stutters
-            if(client_message.counter >= client.current_event_counter || client_message.counter == 0){ //If more recent. Taking into account wrapping.
+            //todo figure out proper wrapping counter: https://stackoverflow.com/questions/68758893/building-a-timeline-from-lossy-time-stamps
+         //   if(client_message.counter >= client.current_event_counter || client.current_event_counter == 255){ //If more recent. Taking into account wrapping.
                 client.current_event_counter = client_message.counter;
                 for (const ObjectID & object_id : client.associated_objects) {
                     incoming_events.emplace(object_id,client_message.list);
                 }
-            }
+           // }
         }
     }
 
@@ -140,6 +141,9 @@ private:
     }
 
     uint8_t network_counter = 0; //Used for UDP packet ordering
+
+
+
     /**
      * Wait for incoming events and send out game state
      */
@@ -157,8 +161,8 @@ private:
                 if(!client.handshake) continue;
                 //todo get visible list based on frustum culling + associated objects
                 //todo max buffer size
-                uint8_t buffer_location = 0;
                 std::lock_guard guard (swap_mutex); //Mutex needed to make sure swap does not happen during reading.
+                uint8_t buffer_location = 0;
                 for (const auto & [object_id, game_object] : *objects_buffer_network) {
                     std::vector<uint8_t> data;
                     if(client.cached_objects.find(object_id) == client.cached_objects.end()){
@@ -168,8 +172,10 @@ private:
                         NewObjectMetaData new_obj{game_object->getTypeID() ,object_id, client.associated_objects.find(object_id) != client.associated_objects.end()};
                         addStructToPacket(data,new_obj);
                         game_object->getConstructorParams(data);
-                        network.writeTCP(client_id,data);
-                        client.cached_objects.emplace(object_id);
+                        if(network.writeTCP(client_id,data)){
+                            client.cached_objects.emplace(object_id);
+                            break; //Only one object created at a time
+                        }
                     }else{
                         //must update object
                         StateMetaData meta_data{buffer_location,object_id,network_counter};
@@ -181,6 +187,7 @@ private:
                     }
                 }
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds (TICK_RATE));
         }
     }
 
@@ -191,6 +198,9 @@ private:
         //todo add game objects here
         //make map
         (*objects_buffer_update)[latest_object_id] = std::unique_ptr<GameObject>(new GameMap());
+        latest_object_id++;
+
+        (*objects_buffer_update)[latest_object_id] = std::unique_ptr<GameObject>(new AIPlayer());
         latest_object_id++;
 
         //load resources and register services
@@ -240,7 +250,6 @@ private:
             //swap buffers
             swapBuffers();
         }
-
         //todo deregister services. Not really needed since services will be deleted anyway.
     }
 

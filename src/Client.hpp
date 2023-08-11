@@ -52,6 +52,8 @@ private:
 
     std::thread render_thread, network_thead; //Main thread is update thread.
 
+
+
     /**
      * Manage incoming server messages
      */
@@ -63,6 +65,7 @@ private:
             }
 
         }else{  //data packet must be state update
+            //std::cerr << rand() << "Recv updates \n";
             incoming_state_updates.emplace(packet_data);
         }
     }
@@ -80,6 +83,7 @@ private:
             network.writeTCP(handshake_data);
         }
         while(running){
+            //todo rejoin server if disconnected
             //Gather messages
             network.processIncoming([this](bool TCP, const ConnectionManager::RawData& packet_data,ConnectionManager& manager){
                 this->receiveCallback(TCP,packet_data,manager);
@@ -94,6 +98,7 @@ private:
                 network_counter = (network_counter + 1) % 256; //explicit wrap
             }
             while(outgoing_events.try_dequeue(outgoing_event)){} //Only send one event at a time.
+            std::this_thread::sleep_for(std::chrono::milliseconds (TICK_RATE));
         }
     }
 
@@ -152,24 +157,23 @@ public:
             outgoing_events.emplace(event);
 
 
-            if(incoming_objects.size_approx() > 0){
-                std::lock_guard guard(resource_mutex);
-                //init new objects
-                ConnectionManager::RawData new_object_data;
-                while (incoming_objects.try_dequeue(new_object_data)) {
-                    auto meta_data = extractStructFromPacket<NewObjectMetaData>(new_object_data,
-                                                                                sizeof(MessageTypeMetaData));
-                    object_cache[meta_data.object_id] = GameObject::instantiateGameObject(meta_data.type_id,
-                                                                                          new_object_data,
-                                                                                          sizeof(MessageTypeMetaData) +
-                                                                                          sizeof(NewObjectMetaData));
-                    {
-                        //todo figure out why lock guard here causes issues
-                        object_cache[meta_data.object_id]->loadResourcesClient(resource_manager, meta_data.is_associated);
-                    }
-                    object_cache[meta_data.object_id]->registerServices(services);
+
+            //init new objects
+            ConnectionManager::RawData new_object_data;
+            while (incoming_objects.try_dequeue(new_object_data)) {
+                auto meta_data = extractStructFromPacket<NewObjectMetaData>(new_object_data,
+                                                                            sizeof(MessageTypeMetaData));
+                object_cache[meta_data.object_id] = GameObject::instantiateGameObject(meta_data.type_id,
+                                                                                      new_object_data,
+                                                                                      sizeof(MessageTypeMetaData) +
+                                                                                      sizeof(NewObjectMetaData));
+                {
+                    std::lock_guard guard(resource_mutex);
+                    object_cache[meta_data.object_id]->loadResourcesClient(resource_manager, meta_data.is_associated);
                 }
+                object_cache[meta_data.object_id]->registerServices(services);
             }
+
 
 
             //update state
@@ -191,13 +195,12 @@ public:
             //predict
 
             for (auto &i: update_buffer) {
-                std::lock_guard guard(visibility_buffer_mutex);
                 if (i != nullptr) {
+                    std::lock_guard guard(visibility_buffer_mutex);
                     i->predict(delta_time, event, services, resource_manager);
                 }
             }
         }
-        stop();
     }
 
     /**

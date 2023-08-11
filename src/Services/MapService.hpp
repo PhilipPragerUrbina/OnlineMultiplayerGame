@@ -28,4 +28,5 @@ public:
     }
 
 
+     glm::vec3 chaser = {0,0,1};
 };

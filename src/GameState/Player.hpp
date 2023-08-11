@@ -6,6 +6,7 @@
 
 #include "GameObject.hpp"
 #include "../Physics/PhysicsMesh.hpp"
+#include "glm/gtx/rotate_vector.hpp"
 
 struct PlayerArgs {
 
@@ -22,7 +23,7 @@ struct PlayerState{
  */
 class Player : public GameObjectImpl<Player,PlayerArgs,PlayerState>{
 private:
-    SphereBV hitbox{{0,0,0},0.1};
+    SphereBV hitbox{{0,0,0},0.3};
     float current_radians_x = 0, current_radians_y = 0; //view
     Camera camera {90,{0,0,1},1};
 
@@ -31,7 +32,7 @@ private:
     glm::vec3 velocity{0,0,0};
 
     const float map_scale = 10.0f;
-
+    float grav_vel = 0; //Gravity velocity
     bool main_player = false;
 
     ResourceManager::ResourceID texture;
@@ -41,6 +42,7 @@ public:
         main_player = associated;
         texture = manager.getTexture("Shark.png");
         mesh = manager.getMesh("shorked.fbx", ResourceManager::FBX);
+        camera.setPosition({2,2,2});
     }
 
     void loadResourcesServer(ResourceManager &manager) override {
@@ -58,14 +60,41 @@ public:
     void update(double delta_time, const EventList &events, const Services &services,
                 const ResourceManager &resource_manager) override {
         //waste cpu cycles such that update and predict run long enough for delta_time to have any precision whatsoever.(Important for consistent movement betwen client and server)
-        std::cout << "delta time " << delta_time << "\n";
+      //  std::cout << "delta time " << delta_time << "\n";
             //todo collider
+
         direction = glm::normalize(direction);
+        hitbox.position = position/map_scale;
+        hitbox.radius = 0.5/2.0f;
+
         camera.setPosition(position);
         camera.setLookAt(position + direction);
 
         float speed = 10.0f;
         velocity = {0,0,0};
+
+        const float player_height = 0.5;
+        float down_dist;
+        //todo scale and other raycast transforms
+        if(resource_manager.readPhysicsMesh(services.map_service.queryCollider())->rayCast(position/map_scale,{0,0,1},down_dist)){
+            if(down_dist < player_height){
+                grav_vel = 0;
+                position.z -= player_height - down_dist;
+                if(events.keys[4]){
+                    grav_vel =  -30.0f;
+                    velocity += glm::vec3 {0,0,grav_vel} * (float)delta_time;
+                }
+            }else{
+                //position is not collision checked while vel is
+                if(grav_vel > 0 ){
+                    position += glm::vec3 {0,0,grav_vel} *  (float)delta_time; //no need for collision check here, raycast takes care of it.
+                } else{
+                    velocity += glm::vec3 {0,0,grav_vel} *  (float)delta_time;    //Players should not clip through roof
+                }
+                //This also means players are less likely to get stuck on edges
+                grav_vel +=  0.001f;
+            }
+        };
 
         //interpolate between polling
         if(events.keys[0]){
@@ -81,10 +110,16 @@ public:
             velocity += glm::vec3{direction.y,-direction.x,0}* speed;
         }
         if(events.keys[4]){
-            velocity += glm::vec3{0,0,-1}* speed;
+           // velocity += glm::vec3{0,0,-10}* speed;
         }
         if(events.keys[5]){
-            velocity += glm::vec3{0,0,1}* speed;
+           // velocity += glm::vec3{0,0,1}* speed;
+        }
+        for (const glm::vec3& collision_plane :resource_manager.readPhysicsMesh(services.map_service.queryCollider())->collide(hitbox)) {
+            //collision plane is towards player
+            glm::vec3 normal =  -collision_plane; //normal away from player
+            float towards = abs(glm::dot(velocity , normal)); //Get velocity towards plane
+            velocity -= towards * normal * 1.1f; //Make sure they cant stay in wall
         }
 
         position += velocity * (float)delta_time;
@@ -114,6 +149,7 @@ public:
     }
 
     void updateServices(Services &services) const override {
+        services.map_service.chaser = position;
         //nothing
     }
 
@@ -121,11 +157,10 @@ public:
             if(main_player){
                 renderer.setCamera(camera);
             }else{
-                renderer.queueDraw(manager.readMesh(mesh),glm::inverse(glm::lookAt(position,position+glm::vec3 (-direction.y,direction.x,direction.z),{0,0,1})),manager.readTexture(texture));
+                renderer.queueDraw(manager.readMesh(mesh),glm::translate(glm::identity<glm::mat4>(),position)* glm::rotate(glm::orientation(glm::vec3 {direction.x,direction.y,direction.z},{0,1,0}), 3.1415f/2.0f, {0,0,-1}),manager.readTexture(texture));
             }
     }
-    //todo object initialization is somewhat of a network race condition. Add on server such that it gets through.
-    //todo make disconnect more robust by checking on client side
+  
     SphereBV getBounds() const override {
         return hitbox;
     }
@@ -138,65 +173,23 @@ protected:
     void deserializeInternal(const PlayerState &state) override {
         position = state.position;
         velocity = state.velocity;
-        direction = state.direction;
+        if(!main_player){ //Since looking is deterministic the main player can be authoritative
+            direction = state.direction;
+        }
+        camera.setPosition(position);
+        camera.setLookAt(position + direction);
+        hitbox.position = position/map_scale;
     }
 
     std::unique_ptr<GameObject> createNewInternal(const PlayerArgs &params) const override {
         return std::unique_ptr<GameObject>(new Player());
     }
 
+
     void predictInternal(double delta_time, const EventList &events, const Services &services,
                          const ResourceManager &resource_manager) override {
         if(main_player){
-            std::cout << "delta time " << delta_time << "\n";
-            direction = glm::normalize(direction);
-            camera.setPosition(position);
-            camera.setLookAt(position + direction);
-
-            float speed = 10.0f;
-            velocity = {0,0,0};
-
-            //interpolate between polling
-            if(events.keys[0]){
-                velocity += glm::vec3 {direction.x,direction.y,0} * speed;
-            }
-            if(events.keys[1]){
-                velocity += -glm::vec3 {direction.x,direction.y,0} * speed;
-            }
-            if(events.keys[2]){
-                velocity += -glm::vec3{direction.y,-direction.x,0}* speed;
-            }
-            if(events.keys[3]){
-                velocity += glm::vec3{direction.y,-direction.x,0}* speed;
-            }
-            if(events.keys[4]){
-                velocity += glm::vec3{0,0,-1}* speed;
-            }
-            if(events.keys[5]){
-                velocity += glm::vec3{0,0,1}* speed;
-            }
-
-            position += velocity * (float)delta_time;
-
-            const float SENSITIVITY = 100.0f;
-            current_radians_x =  (float)events.mouse_x / SENSITIVITY;
-            current_radians_y = (float)events.mouse_y / SENSITIVITY;
-            direction.x = sinf(current_radians_x);
-            direction.y = cosf(current_radians_x);
-
-            const float VERTICAL_CLAMP = 1.5;
-
-            //Clamp vertical
-            if(current_radians_y > VERTICAL_CLAMP){
-                current_radians_y = VERTICAL_CLAMP;
-            }
-
-            //Clamp vertical
-            if(current_radians_y < -VERTICAL_CLAMP){
-                current_radians_y = -VERTICAL_CLAMP;
-            }
-
-            direction.z = sinf(current_radians_y);
+            update(delta_time,events,services,resource_manager);
 
 
         } else{
@@ -209,145 +202,4 @@ protected:
     }
 
 };
-  /*
 
-
-    float grav_vel = 0; //Gravity velocity
-   */
-/*
-       hitbox.position = position/map_scale;
-        hitbox.radius = player_height/2.0f;
-
-        direction = glm::normalize(direction);
-        transform = glm::translate(glm::identity<glm::mat4>(),position);
-
-        camera.setPosition(position);
-        camera.setLookAt(position + direction);
-
-        float speed = 100.0f * delta_time;
-
-        glm::vec3  vel = {0,0,0};
-
-        float down_dist;
-        //todo scale and other raycast transforms
-       if(map_collider.rayCast(position/map_scale,{0,0,1},down_dist)){
-            if(down_dist < player_height){
-                grav_vel = 0;
-                position.z -= player_height - down_dist;
-                if(input[4]){
-                    grav_vel =  -3.0f;
-                    vel += glm::vec3 {0,0,grav_vel} * speed;
-                    input[4] = false;
-                }
-            }else{
-                //position is not collision checked while vel is
-                if(grav_vel > 0 ){
-                    position += glm::vec3 {0,0,grav_vel} * speed; //no need for collision check here, raycast takes care of it.
-                } else{
-                    vel += glm::vec3 {0,0,grav_vel} * speed;    //Players should not clip through roof
-                }
-                //This also means players are less likely to get stuck on edges
-               grav_vel += speed * 0.1f;
-            }
-        };
-
-        if(input[5]) speed *= 2;
-
-        //interpolate between polling
-        if(input[0]){
-            vel += glm::vec3 {direction.x,direction.y,0} * speed;
-        }
-        if(input[1]){
-            vel += -glm::vec3 {direction.x,direction.y,0} * speed;
-        }
-        if(input[2]){
-            vel += -glm::vec3{direction.y,-direction.x,0}* speed;
-        }
-        if(input[3]){
-            vel += glm::vec3{direction.y,-direction.x,0}* speed;
-        }
-
-       for (const glm::vec3& collision_plane : map_collider.collide(hitbox)) {
-           //collision plane is towards player
-            glm::vec3 normal =  -collision_plane; //normal away from player
-            float towards = abs(glm::dot(vel , normal)); //Get velocity towards plane
-            vel -= towards * normal * 1.1f; //Make sure they cant stay in wall
-       }
-
-        position += vel;
-
-
-        for (const SDL_Event& event : events.events) {
-            if(event.type == SDL_KEYDOWN){
-                switch (event.key.keysym.sym) {
-                    case SDLK_w:
-                        input[0] = true;
-                        break;
-                    case SDLK_s:
-                        input[1] = true;
-                        break;
-                    case SDLK_a:
-                        input[2] =  true;
-                        break;
-                    case SDLK_d:
-                        input[3] =  true;
-                        break;
-                    case SDLK_SPACE:
-                        input[4] =  true;
-                        break;
-                }
-                if(event.key.keysym.mod == KMOD_LSHIFT){
-                    input[5] = true;
-                } else {
-                    input[5] = false;
-                }
-            }else if(event.type == SDL_KEYUP){
-                    switch (event.key.keysym.sym) {
-                        case SDLK_w:
-                            input[0] = false;
-                            break;
-                        case SDLK_s:
-                            input[1] = false;
-                            break;
-                        case SDLK_a:
-                            input[2] =  false;
-                            break;
-                        case SDLK_d:
-                            input[3] =  false;
-                            break;
-                        case SDLK_SPACE:
-                            input[4] =  false;
-                            break;
-                    }
-                if(event.key.keysym.mod == KMOD_LSHIFT){
-                    input[5] = true;
-                } else {
-                    input[5] = false;
-                }
-
-            } else if(event.type == SDL_MOUSEBUTTONDOWN){
-
-            } else if(event.type == SDL_MOUSEMOTION){
-                const float SENSITIVITY = 100.0f;
-                current_radians_x +=  (float)event.motion.xrel / SENSITIVITY;
-                current_radians_y += (float)event.motion.yrel / SENSITIVITY;
-                direction.x = sinf(current_radians_x);
-                direction.y = cosf(current_radians_x);
-
-                const float VERTICAL_CLAMP = 1.5;
-
-                //Clamp vertical
-                if(current_radians_y > VERTICAL_CLAMP){
-                    current_radians_y = VERTICAL_CLAMP;
-                }
-
-                //Clamp vertical
-                if(current_radians_y < -VERTICAL_CLAMP){
-                    current_radians_y = -VERTICAL_CLAMP;
-                }
-
-                direction.z = sinf(current_radians_y);
-
-            }
-        }
- */

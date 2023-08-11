@@ -268,11 +268,12 @@ public:
     }
 
     void deserialize(const std::vector<uint8_t>& packet, size_t begin,uint8_t counter) override {
-        if(counter >= last_counter || counter == 0){
+        //todo figure out proper wrapping counter: https://stackoverflow.com/questions/68758893/building-a-timeline-from-lossy-time-stamps
+      //  if(counter >= last_counter || last_counter == 255){
             STATE state_buffer = extractStructFromPacket<STATE>(packet,begin);
             deserializeInternal(state_buffer);
             last_counter = counter;
-        }
+       // }
     }
 
 
