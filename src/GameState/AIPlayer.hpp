@@ -47,23 +47,22 @@ public:
         //nothing
     }
 
-    void update(double delta_time, const EventList &events2, const Services &services,
+    void update(int delta_time, const EventList &events2, const Services &services,
                 const ResourceManager &resource_manager) override {
         //waste cpu cycles such that update and predict run long enough for delta_time to have any precision whatsoever.(Important for consistent movement betwen client and server)
-
 
             //todo collider
         direction = glm::normalize(direction);
         camera.setPosition(position);
         camera.setLookAt(position + direction);
 
-        float speed = 8.0f;
+        float speed = 0.005f;
         velocity = {0,0,0};
 
        velocity =  direction * speed;
 
-       if(glm::distance(services.map_service.chaser,position) > 2.0f){
-           position += velocity * (float)delta_time;
+       if(glm::distance(services.map_service.chaser,position) > 5.0f){
+           position += velocity * (float) delta_time ;
            direction = glm::normalize(services.map_service.chaser-position);
        }else{
            velocity = {0,0,0};
@@ -103,8 +102,8 @@ protected:
         return std::unique_ptr<GameObject>(new Player());
     }
 
-    void predictInternal(double delta_time, const EventList &events, const Services &services,
-                         const ResourceManager &resource_manager) override {
+    void predict(int delta_time, const EventList &events, const Services &services,
+                 const ResourceManager &resource_manager) override {
 
             position += velocity * (float)delta_time;
 

@@ -57,10 +57,10 @@ public:
         //nothing
     }
 
-    void update(double delta_time, const EventList &events, const Services &services,
+    void update(int delta_time, const EventList &events, const Services &services,
                 const ResourceManager &resource_manager) override {
         //waste cpu cycles such that update and predict run long enough for delta_time to have any precision whatsoever.(Important for consistent movement betwen client and server)
-      //  std::cout << "delta time " << delta_time << "\n";
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
             //todo collider
 
         direction = glm::normalize(direction);
@@ -70,7 +70,7 @@ public:
         camera.setPosition(position);
         camera.setLookAt(position + direction);
 
-        float speed = 10.0f;
+        float speed = 0.01f;
         velocity = {0,0,0};
 
         const float player_height = 0.5;
@@ -80,10 +80,10 @@ public:
             if(down_dist < player_height){
                 grav_vel = 0;
                 position.z -= player_height - down_dist;
-                if(events.keys[4]){
-                    grav_vel =  -30.0f;
-                    velocity += glm::vec3 {0,0,grav_vel} * (float)delta_time;
-                }
+               // if(events.keys[4]){
+                  //  grav_vel =  -30.0f;
+                  //  velocity += glm::vec3 {0,0,grav_vel} * (float)delta_time;
+               // }
             }else{
                 //position is not collision checked while vel is
                 if(grav_vel > 0 ){
@@ -92,7 +92,7 @@ public:
                     velocity += glm::vec3 {0,0,grav_vel} *  (float)delta_time;    //Players should not clip through roof
                 }
                 //This also means players are less likely to get stuck on edges
-                grav_vel +=  0.001f;
+                grav_vel +=  0.0001f;
             }
         };
 
@@ -122,7 +122,7 @@ public:
             velocity -= towards * normal * 1.1f; //Make sure they cant stay in wall
         }
 
-        position += velocity * (float)delta_time;
+        position += velocity*(float)delta_time;
 
         const float SENSITIVITY = 100.0f;
         current_radians_x =  (float)events.mouse_x / SENSITIVITY;
@@ -186,8 +186,8 @@ protected:
     }
 
 
-    void predictInternal(double delta_time, const EventList &events, const Services &services,
-                         const ResourceManager &resource_manager) override {
+    void predict(int delta_time, const EventList &events, const Services &services,
+                 const ResourceManager &resource_manager) override {
         if(main_player){
             update(delta_time,events,services,resource_manager);
 

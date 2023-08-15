@@ -9,6 +9,7 @@
 
 /**
  * Put services here
+ * @details Services allow game objects to communicate with each other.
  */
 struct Services {
     MapService map_service;

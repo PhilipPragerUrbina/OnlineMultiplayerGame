@@ -19,14 +19,14 @@ class GameMap : public GameObjectImpl<GameMap,MapArgs,MapState>{
     uint16_t texture;
 public:
     void loadResourcesClient(ResourceManager &manager, bool associated) override {
-        mesh = manager.getMesh("Map.obj",ResourceManager::OBJ);
+        mesh = manager.getMesh("vehicle_game/map.obj",ResourceManager::OBJ);
         physics_mesh =  manager.getPhysicsMesh(mesh);
-        texture = manager.getTexture("Map.png");
+        texture = manager.getTexture("vehicle_game/map_texture.png");
 
     }
 
     void loadResourcesServer(ResourceManager &manager) override {
-        mesh = manager.getMesh("Map.obj",ResourceManager::OBJ);
+        mesh = manager.getMesh("vehicle_game/map.obj",ResourceManager::OBJ);
         physics_mesh =  manager.getPhysicsMesh(mesh);
     }
 
@@ -38,7 +38,7 @@ public:
             //ignore
     }
 
-    void update(double delta_time, const EventList &events, const Services &services, const ResourceManager& resource_manager) override {
+    void update(int delta_time, const EventList &events, const Services &services, const ResourceManager& resource_manager) override {
         //ignore
     }
 
@@ -48,7 +48,7 @@ public:
 
 
     void render(Renderer& renderer, const ResourceManager& manager) const override {
-            renderer.queueDraw(manager.readMesh(mesh),glm::scale(glm::identity<glm::mat4>(),{10,10,10}),manager.readTexture(texture));
+            renderer.queueDraw(manager.readMesh(mesh),glm::identity<glm::mat4>(),manager.readTexture(texture));
     }
 
     SphereBV getBounds() const override {
@@ -71,7 +71,7 @@ protected:
         //todo automate the createnew with simple constructor that takes in args and some casting like in copy()
     }
 
-    void predictInternal(double delta_time, const EventList &events, const Services &services, const ResourceManager& resource_manager) override {
+    void predict(int delta_time, const EventList &events, const Services &services, const ResourceManager& resource_manager) override {
     }
 
     MapArgs getConstructorParamsInternal() const override {

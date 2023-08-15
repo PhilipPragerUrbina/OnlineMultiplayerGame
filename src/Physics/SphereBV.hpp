@@ -59,6 +59,34 @@ struct SphereBV {
     }
 
 
+    /**
+     * Check if the sphere intersects an infinite plane or is behind it
+     * @param plane_normal Normal facing in the direction of the plane. 'Behind' is -plane_normal.
+     * @param plane_offset Plane position from origin.
+     * @return True if intersects or is behind.
+     */
+    bool intersectPlaneOrBehind(const glm::vec3& plane_normal, const glm::vec3& plane_offset) const {
+        //get distance from plane
+        float distance = glm::dot(position-plane_offset, plane_normal);
+        return distance < radius; //if radius or below it is intersecting with the plane or behind
+    }
+
+    /**
+     * Check if this sphere is in the frustum of the camera
+     * @param camera Camera
+     * @return True if in frustum, does not check far plane
+     */
+    bool frustumCull(const Camera& camera){
+        //get planes in view space
+       for(const Plane& plane : camera.getPlanes()){
+            if(frustumCull(plane.normal, plane.offset))  {
+                return false;
+            }
+       }
+        return true;
+    }
+
+
     //todo return proper collision normal
     /**
    * Collide this sphere with a triangle

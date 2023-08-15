@@ -17,51 +17,50 @@
 #include "GameState/GameMap.hpp"
 #include "GameState/Player.hpp"
 #include "GameState/AIPlayer.hpp"
+#include "GameState/Car.hpp"
 
 /**
  * Contains information about a client
  */
 struct ClientInfo{
-    u_long id{}; //IP address
-    std::unordered_set<uint16_t> associated_objects{}; //Objects assigned to this client. Always visible and are relayed events from a client.
+    std::unordered_set<uint16_t> associated_objects{}; //Objects assigned to this client.
+    // Always visible and are relayed events from a client.
     uint8_t current_event_counter = 0; //Counter of current event to make sure new events are more recent
     std::unordered_set<uint16_t> cached_objects; //Objects the client has been told to instantiate.
-    bool handshake = false;
+    bool handshake = false; //If the client has initiated a handshake
 };
+
 /**
  * Keeps game state and simulates a game world.
  * Sends relevant game state to a client and receive input events from the clients (Server authoritative).
  */
 class Server {
 private:
-    //Unique id for a game object
-    typedef uint16_t ObjectID; //todo swap to this typedef globally for clarity
 
-    Services services{}; //Services used by gameobjects. (Update thread)
-    std::unordered_map<ObjectID,EventList> object_events{}; //Any objects with events assigned to them (Update thread)
+    Services services{}; //Services used by gameobjects. (Write Update thread)
+    ResourceManager resource_manager{}; //Shared between game objects read only resources (Write Update)
+    std::unordered_map<ObjectID,ClientEvents> object_events{}; //Any objects with events assigned to them. (Write Update thread)
 
-    std::unordered_map<u_long,ClientInfo> clients{}; //Clients currently connected (Network thread)
-    ConnectionManager network; //Connection (Network thread)
+    std::unordered_map<u_long,ClientInfo> clients{}; //Clients currently connected. (Write Network thread)
+    ConnectionManager network; //Connection to clients. (Write Network thread)
 
-    moodycamel::ReaderWriterQueue<std::pair<ObjectID ,EventList>> incoming_events{}; //New events to add to objects (Network thread -> Update thread)
+    moodycamel::ReaderWriterQueue<std::pair<ObjectID ,ClientEvents>> incoming_events{}; //New events to add to objects (Network thread -> Update thread)
     moodycamel::ReaderWriterQueue<std::pair<ObjectID ,std::unique_ptr<GameObject>>> new_object_queue; //New objects created by network thread. (Network thread -> Update thread)
-    //todo allow new objects to be created by game objects.
-    moodycamel::ReaderWriterQueue<ObjectID> remove_object_queue; //Objects the network thread wants to destroy (Network thread -> Update thread)
+    moodycamel::ReaderWriterQueue<ObjectID> remove_object_queue; //Objects the network thread wants to destroy. (Network thread -> Update thread)
+    //todo allow new objects to be spawned by game objects or services.
 
     std::thread network_thead,update_thread;
-    std::atomic<bool> running = true; //(Network thread & Update thread)
-    std::atomic<ObjectID> latest_object_id = 0; //Latest available object id. (Network thread & Update thread)
-    ResourceManager resource_manager{}; //Shared between game objects read only resources (Network)
+    std::atomic<bool> running = true; //(Read Network thread & Write Update thread)
+    std::atomic<ObjectID> latest_object_id = 0; //Latest available object id. (Write Network thread & Write thread)
 
-
-    std::unique_ptr<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>> objects_buffer_network; //Game object buffer for both threads to READ (Network thread & Update thread)
-    std::unique_ptr<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>> objects_buffer_update; //Game object buffer to be written to by update thread(Update thread)
+    std::unique_ptr<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>> objects_buffer_network; //Game object buffer for network thread. (Read Network thread & Write Update thread)
+    std::unique_ptr<std::unordered_map<ObjectID,std::unique_ptr<GameObject>>> objects_buffer_update; //Game object buffer to be written to by update thread.(Write Update thread)
     std::mutex swap_mutex;
 
     /**
      * Swap network and update buffer pointers.
      * Also copies data such that they are equal.
-     * Happens on update thread.
+     * @warning Only called by update thread
      */
     void swapBuffers(){
         //Make sure swap is safe
@@ -71,7 +70,7 @@ private:
         }
         //Copy data from current network buffer to update buffer to apply previous changes.
         //This is fine without a mutex, since it is just a multiple read of the network buffer. And only the update thread uses the update buffer, so it can write to it.
-        objects_buffer_update->clear(); //todo optimize the clear deleting all the objects that could still be used. But objects that are not present in the other buffer should be deleted.
+        objects_buffer_update->clear();
         objects_buffer_update->reserve(objects_buffer_network->size());
         for (const auto& [id, object_ptr] : *objects_buffer_network) {
             (*objects_buffer_update)[id] = object_ptr->copy();
@@ -100,13 +99,12 @@ private:
             auto client_message = extractStructFromPacket<ClientEvents>(packet_data,0);
             ClientInfo& client = clients[client_id];
 
-            //todo figure out proper wrapping counter: https://stackoverflow.com/questions/68758893/building-a-timeline-from-lossy-time-stamps
-         //   if(client_message.counter >= client.current_event_counter || client.current_event_counter == 255){ //If more recent. Taking into account wrapping.
+            if(client_message.counter >= client.current_event_counter || client.current_event_counter == 255){ //If more recent. Taking into account wrapping.
                 client.current_event_counter = client_message.counter;
                 for (const ObjectID & object_id : client.associated_objects) {
-                    incoming_events.emplace(object_id,client_message.list);
+                    incoming_events.emplace(object_id,client_message);
                 }
-           // }
+            }
         }
     }
 
@@ -134,16 +132,12 @@ private:
             clients.erase(client_id);
         }else{
             std::cout << "Client " << client_id << " has connected \n";
-            clients[client_id] = ClientInfo{client_id,{},0,{}};
+            clients[client_id] = ClientInfo{{},0,{}};
             //todo init associated objects here.
-            clients[client_id].associated_objects.emplace(addGameObjectNetworkThread(new Player()));
+           // clients[client_id].associated_objects.emplace(addGameObjectNetworkThread(new Player()));
+            clients[client_id].associated_objects.emplace(addGameObjectNetworkThread(new Car()));
         }
     }
-
-    uint8_t network_counter = 0; //Used for UDP packet ordering
-
-
-
     /**
      * Wait for incoming events and send out game state
      */
@@ -154,13 +148,12 @@ private:
                         this->receiveCallback(TCP,client_id,packet_data,manager);
                 },[this](u_long client_id,ConnectionManager& manager,bool disconnect){
                     this->connectionCallback(client_id,manager,disconnect);
-                },TICK_RATE,50); //todo check tick
+                },TICK_RATE,50);
 
             //Send messages
             for (auto& [client_id, client] : clients) {
                 if(!client.handshake) continue;
                 //todo get visible list based on frustum culling + associated objects
-                //todo max buffer size
                 std::lock_guard guard (swap_mutex); //Mutex needed to make sure swap does not happen during reading.
                 uint8_t buffer_location = 0;
                 for (const auto & [object_id, game_object] : *objects_buffer_network) {
@@ -174,20 +167,22 @@ private:
                         game_object->getConstructorParams(data);
                         if(network.writeTCP(client_id,data)){
                             client.cached_objects.emplace(object_id);
-                            break; //Only one object created at a time
+                            break; //Only one object created at a time for timing reasons.
                         }
                     }else{
+                        if(buffer_location > MAX_VISIBLE_OBJECTS){
+                            continue; //Client ran out of space in visibility buffer.
+                        }
                         //must update object
-                        StateMetaData meta_data{buffer_location,object_id,network_counter};
+                        StateMetaData meta_data{buffer_location,object_id};
                         addStructToPacket(data,meta_data);
                         game_object->serialize(data);
                         network.writeUDP(client_id,data);
-                        network_counter = (network_counter + 1) % 256; //explicit wrap
                         buffer_location++;
                     }
                 }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds (TICK_RATE));
+            std::this_thread::sleep_for(std::chrono::milliseconds (TICK_RATE)); //I know this doesn't actually enforce tick rate, but it doesn't really matter.
         }
     }
 
@@ -199,9 +194,9 @@ private:
         //make map
         (*objects_buffer_update)[latest_object_id] = std::unique_ptr<GameObject>(new GameMap());
         latest_object_id++;
-
-        (*objects_buffer_update)[latest_object_id] = std::unique_ptr<GameObject>(new AIPlayer());
-        latest_object_id++;
+        //Make AI player
+       // (*objects_buffer_update)[latest_object_id] = std::unique_ptr<GameObject>(new AIPlayer());
+       // latest_object_id++;
 
         //load resources and register services
         for (const auto& [id, object_ptr] : *objects_buffer_update) {
@@ -211,6 +206,10 @@ private:
 
         auto last_update = std::chrono::steady_clock::now();
         while(running){
+            //Get delta time.
+            auto now = std::chrono::steady_clock::now();
+            auto delta_time = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
+            last_update = now;
 
             //destroy objects as needed
             uint16_t remove_obj_id;
@@ -225,8 +224,9 @@ private:
                 (*objects_buffer_update)[new_obj.first]->loadResourcesServer(resource_manager);
                 (*objects_buffer_update)[new_obj.first]->registerServices(services);
             }
+
             //Load events
-            std::pair<ObjectID, EventList> new_event;
+            std::pair<ObjectID, ClientEvents> new_event;
             while (incoming_events.try_dequeue(new_event)) {
                 object_events[new_event.first] = new_event.second;
             }
@@ -236,21 +236,20 @@ private:
                 game_object->updateServices(services);
             }
 
-            auto now = std::chrono::steady_clock::now();
-            double delta_time = (double)std::chrono::duration_cast<std::chrono::microseconds>(now - last_update).count() / 1000000.0f;
-            last_update = now;
             //Update objects. No mutex needed as swap happens on this thread.
             for (const auto & [id, game_object] : *objects_buffer_update) {
                 EventList event_list{}; //start with empty event
+                int object_delta_time = delta_time;
                 if (object_events.find(id) != object_events.end()) {
-                    event_list = object_events[id]; //get associated events
+                    event_list = object_events[id].list; //get associated events
+                    object_delta_time = object_events[id].milliseconds; //Use client frame time
                 }
-                game_object->update(delta_time,event_list,services,resource_manager);
+                game_object->update(object_delta_time,event_list,services,resource_manager);
             }
             //swap buffers
             swapBuffers();
         }
-        //todo deregister services. Not really needed since services will be deleted anyway.
+        //No need to deregister services, as the server is ending anyway.
     }
 
 public:

@@ -8,7 +8,7 @@
 #include "Triangle.hpp"
 
 /**
- * A collection of triangles
+ * A geometric construct consisting of triangles
  */
 struct Mesh {
     std::vector<Triangle> tris;

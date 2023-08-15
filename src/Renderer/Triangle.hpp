@@ -7,7 +7,7 @@
 #include "glm/glm.hpp"
 
 /**
- * A triangle to be rendered
+ * A mesh triangle
  */
 struct Triangle {
     glm::vec4 pos[3]; //Vertex positions. Plus W component.
@@ -54,3 +54,4 @@ struct Triangle {
         return false;
     }
 };
+

@@ -94,7 +94,7 @@ public:
      * @param filename File location of texture. JPG,JPEG,PNG,TIFF,or BMP.
      * @return Texture resource ID.
      */
-    ResourceID getTexture(const std::string& filename){
+    ResourceID getTexture(const std::string& filename){  //todo make texture loading failure more graceful
         //todo file extension and access verification
         if(files.find(filename) == files.end()){ //Resource isn't yet created, load it.
             textures.emplace_back(loadTexture(filename));

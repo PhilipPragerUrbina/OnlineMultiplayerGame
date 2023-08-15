@@ -70,15 +70,13 @@ public:
      * Use packet data to update game object state.
      * @param packet Packet containing state struct.
      * @param begin Byte where the state struct begins in data.
-     * @param counter Counter sent to only apply update if more recent
      * @warning Assumes the game object type has already been verified.
      */
-    virtual void deserialize(const std::vector<uint8_t>& packet, size_t begin, uint8_t counter) = 0;
-    //todo update doc here since this stuff all happens on update thread
+    virtual void deserialize(const std::vector<uint8_t>& packet, size_t begin) = 0;
 
     /**
      * Load in textures, meshes, physics meshes. (For the client)
-     * @param textures Use the get[type] methods to load your assets from a file, and then store the resulting id for use later.
+     * @param manager Use the get[type] methods to load your assets from a file, and then store the resulting id for use later.
      * @param associated Is this object associated with this specific client?
      */
     virtual void loadResourcesClient(ResourceManager& manager, bool associated) = 0;
@@ -86,7 +84,7 @@ public:
 
     /**
      * Load in assets here (Usually just physics meshes). (For the server)
-     * @param textures Use the get[type] methods to load your assets from a file, and then store the resulting id for use later.
+     * @param manager Use the get[type] methods to load your assets from a file, and then store the resulting id for use later.
      */
     virtual void loadResourcesServer(ResourceManager& manager) = 0;
 
@@ -96,10 +94,9 @@ public:
     virtual void registerServices(Services& services) = 0;
 
     /**
-     * deRegister the game object with any registered services here
+     * de register the game object with any registered services here
      */
     virtual void deRegisterServices(Services& services) = 0;
-    //todo auto detect
 
     /**
      * This is called as often as possible on the server for each object in an unspecified order.
@@ -109,7 +106,7 @@ public:
      * @param delta_time Time that the last frame took in milliseconds. Multiply by this to ensure consistent movement.
      * @param resource_manager Get read only resources like physics meshes.
      */
-    virtual void update(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
+    virtual void update(int delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
 
     /**
      * Like update, but it runs on the client side.
@@ -117,8 +114,9 @@ public:
      * @param events Events that the client is inputting.
      * @param services Use this to query services. This is for reading only, see updateServices() for writing to services.
      * @param resource_manager Get read only resources like physics meshes.
+     * Use this to update the game state, but will be overridden by server state when available.
      */
-    virtual void predict(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
+    virtual void predict(int delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
 
     /**
      * Write to services here to update them on the state of the game object.
@@ -126,25 +124,25 @@ public:
      */
     virtual void updateServices(Services& services) const = 0;
 
-
-    struct RenderRequest {
-        ResourceManager::ResourceID  texture;
-        ResourceManager::ResourceID  mesh;
-        glm::mat4 model_transform;
-        std::vector<glm::mat4> bones;
-        bool last; //last visible object for this frame
-    };
     /**
      * Use this to render your object every frame using queueDraw() or queueDrawSkinned().
-     * You may set the camera here if you want, but only one game object on the client should do this.
      * @warning No game state should be changed here. This is read-only,for thread safety reasons.
      * @param renderer The renderer to render your meshes with.
+     * @param resource_manager Use this to access meshes and textures.
      */
     virtual void render( Renderer& renderer, const ResourceManager& resource_manager) const = 0;
-    //todo change to better and doc
 
     /**
-     * Get bounding-sphere of this object for ray casting and culling
+     * Set the camera if needed.
+     * This can also be done in render() but this method ensures it happens before other objects are rendered.
+     * @param renderer Set the camera here.
+     * @warning Only one game object on the client should do this.
+     */
+    virtual void setCamera(Renderer& renderer) const {};
+
+
+    /**
+     * Get bounding-sphere of this object for ray casting and culling.
      */
     [[nodiscard]] virtual SphereBV getBounds() const = 0;
 
@@ -166,7 +164,8 @@ public:
  * Packets: If the state of the game object is sent over the network, each game object has ONE packet. So a gameobjects state must be serializable in less than a certain number of bytes
  * and usually with a known size (No variable length arrays and such).
  * If it does not meet these criteria, it must be split into multiple game objects.
- * @tparam SELF The type of the child class
+ * @note The types below can be the same as another gameobject, if you would like a different gameobject type on the server vs the client. Example: BotPlayer on server is sent just like a normal Player to client.
+ * @tparam SELF The type of the child class.
  * @tparam CONSTRUCTION_PARAMS The struct containing data needed to construct a new instance of the game object.
  * Should not be the same things as in the state, this is for parameters that last the entire lifetime of the object and are not changed.
  * @tparam STATE A struct containing state that will be sent in a packet. Should not be very large and should only contain what the client needs to know. It Can be empty as well.
@@ -180,7 +179,6 @@ private:
      */
     template <class SELF_INNER> struct StaticTypeConstructor {
         StaticTypeConstructor(){
-            std::cerr << "Object initialized";
             type_table[last_available_type_id] = std::unique_ptr<GameObject>(new SELF_INNER()); //Must have default constructor.
             type_id_table[std::type_index(typeid(SELF_INNER))] = last_available_type_id;
             last_available_type_id++;
@@ -190,12 +188,7 @@ private:
     //Should be specialized such that it is a separate static instance for each game object type.
     inline static StaticTypeConstructor<SELF> static_type_constructor{};
 
-    uint8_t last_counter = 0;
-
 protected:
-
-
-
     /**
      * @return Struct containing any state the client must know.
      * @warning Must be smaller than the maximum packet size minus the auto-included metadata.
@@ -217,16 +210,6 @@ protected:
     virtual std::unique_ptr<GameObject> createNewInternal(const CONSTRUCTION_PARAMS& params) const = 0;
 
     /**
-     * Like update, but it runs on the client side.
-     * @param delta_time Time that the last frame took in milliseconds. Multiply by this to ensure consistent movement.
-     * @param events Events that the client is inputting.
-     * @param services  Use this to query services. This is for reading only, see updateServices() for writing to services.
-     * @param resource_manager Get read only resources like colliders.
-     * Use this to update the game state, but will be overridden by server state when available.
-     */
-    virtual void predictInternal(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
-
-    /**
      * Get the constructor params that can be used to create a copy of this object on the client side.
      * @return Constructor params originally used to instantiate this object.
      */
@@ -241,13 +224,11 @@ public:
         return std::unique_ptr<GameObject>(new SELF(*((SELF*)this)));
     }
 
-    //todo example file showing steps to implement game object
-
     /**
      * @warning The child must implement a default constructor.
      */
     GameObjectImpl() {
-        static_type_constructor; //use it or lose it. todo make sure this is not optimized away
+        static_type_constructor; //Use it or lose it. It should not be optimized away.
     };
 
 
@@ -267,22 +248,11 @@ public:
         addStructToPacket(packet,state);
     }
 
-    void deserialize(const std::vector<uint8_t>& packet, size_t begin,uint8_t counter) override {
-        //todo figure out proper wrapping counter: https://stackoverflow.com/questions/68758893/building-a-timeline-from-lossy-time-stamps
-      //  if(counter >= last_counter || last_counter == 255){
+    void deserialize(const std::vector<uint8_t>& packet, size_t begin) override {
             STATE state_buffer = extractStructFromPacket<STATE>(packet,begin);
             deserializeInternal(state_buffer);
-            last_counter = counter;
-       // }
     }
 
 
-    void predict(double delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) override {
-        predictInternal(delta_time,events, services,resource_manager);
-    }
-
-    ~GameObjectImpl() override= default;
-
-    //todo audio
-
+    virtual ~GameObjectImpl() = default;
 };

@@ -13,10 +13,12 @@
 class MapService {
 private:
      uint16_t map;
+     bool init = false;
 public:
 
     void registerMap(  uint16_t collider){
         map = collider;
+        init = true;
     }
 
     void deRegisterMap( ){
@@ -25,6 +27,10 @@ public:
 
     [[nodiscard]]  uint16_t queryCollider() const {
         return map;
+    }
+
+    [[nodiscard]]  bool hasCollider() const {
+        return init;
     }
 
 

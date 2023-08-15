@@ -21,18 +21,12 @@ int main(int argc, char* argv[]) {
         ip = "127.0.0.1";
     }
 
-   // std::cout << "Enter port for this client\n";
-   // ConnectionManager::Port port;
-  //  std::cin >> port;
-
     try {
         Client client{ConnectionManager::getAddress(8080, ip)};
     } catch (const std::runtime_error& error){
         std::cout << error.what() << "\n";
         goto start;
     }
-
-
     return 0;
 }
 

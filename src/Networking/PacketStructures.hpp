@@ -11,10 +11,20 @@
 //This file defines the shared configurations between the client and server
 
 /**
+ * Unique identifier for game object instance
+ */
+typedef uint16_t ObjectID;
+
+/**
  * The tick rate in milliseconds.
  * @details How long to wait for new packets before updating other threads.
  */
 const uint32_t TICK_RATE = 15;
+
+/**
+ * How many objects can be visible on the client side at the same time.
+ */
+const uint32_t MAX_VISIBLE_OBJECTS = 15;
 
 /**
  * Network protocol version
@@ -26,8 +36,7 @@ const uint16_t PROTOCOL_VERSION = 0;
  */
 struct StateMetaData {
     uint8_t buffer_location; //Location in the client array of game-objects
-    uint16_t object_id; //unique identifier for this specific object
-    uint8_t counter; //Incrementing wrapping counter used to ensure packets arrive in order.
+    ObjectID object_id; //unique identifier for this specific object
 };
 
 /**
@@ -35,7 +44,7 @@ struct StateMetaData {
   */
 struct NewObjectMetaData {
     uint16_t type_id; //game object type for use with type table.
-    uint16_t object_id; //unique identifier for this specific object subtype.
+    ObjectID object_id; //unique identifier for this specific object subtype.
     bool is_associated; //Is this object associated with the current client?
 };
 //todo instance id: unique identifier for this specific object configuration(Constructor params for re-use).
@@ -67,6 +76,7 @@ struct HandShake {
  */
 struct ClientEvents {
     uint8_t counter = 0; //Incrementing wrapping counter used to ensure packets arrive in order.
+    uint16_t milliseconds= 0; //delta time of command
     EventList list{};
 };
 
@@ -91,7 +101,7 @@ template <class T> void addStructToPacket(std::vector<uint8_t>& packet, const T&
  * @return Struct copied from the packet.
  */
 template <class T> T extractStructFromPacket(const std::vector<uint8_t>& packet, size_t begin){
-    assert(packet.size() >= sizeof(T)); //todo check
+    assert(packet.size() >= sizeof(T)+begin);
     T value{};
     memcpy(&value, packet.data()+begin, sizeof(T));
     return value;

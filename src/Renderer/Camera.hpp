@@ -6,6 +6,12 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+struct Plane {
+    glm::vec3 normal;
+    glm::vec3 offset;
+};
+
 /**
  * This represents a camera that is used for projection
  */
@@ -119,4 +125,14 @@ public:
     }
 
 
+
+    /**
+     * Get world space planes
+     */
+    std::vector<Plane> getPlanes() const {
+        //todo precompute view space planes at beginning
+        //todo only multiply to world space at camera move
+        //return precomputed here
+        //todo move stuff around in regards to intersections and collisions and geometric primitives like planes
+    }
 };
