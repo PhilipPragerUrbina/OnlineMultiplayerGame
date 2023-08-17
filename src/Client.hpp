@@ -51,6 +51,9 @@ private:
 
     std::thread render_thread, network_thead; //Main thread is update thread.
 
+    //belongs to render thread
+    Camera global_camera{90,{0,0,-1},1}; //todo allow aspect ratio to change and update server values
+
     /**
      * Manage incoming server messages
      */
@@ -76,10 +79,21 @@ private:
             addStructToPacket(handshake_data, type_meta_data);
             HandShake hand_shake{PROTOCOL_VERSION};
             addStructToPacket(handshake_data, hand_shake);
-            if(!network.writeTCP(handshake_data)){
+            if (!network.writeTCP(handshake_data)) {
                 std::cerr << "Server handshake failed \n";
                 //todo retry
             };
+        }
+        {   //set camera on server
+            ConnectionManager::RawData camera_data;
+            MessageTypeMetaData type_meta_data{CAMERA_CHANGE};
+            addStructToPacket(camera_data, type_meta_data);
+            CameraChange camera_change{90,1};
+            addStructToPacket(camera_data, camera_change);
+            if(!network.writeTCP(camera_data)){
+                std::cerr << "Server camera set failed \n";
+            };
+
         }
         while(running){
 
@@ -118,17 +132,26 @@ private:
             }
             {
                 //set camera
+                glm::vec3 new_position = {2,2,2}; //differ default values to avoid nans
+                glm::vec3 new_look_at = {0,0,0};
                 for (uint32_t i = 0; i < MAX_VISIBLE_OBJECTS; ++i) {
                     if (render_buffer[i] != nullptr) {
-                        render_buffer[i]->setCamera(renderer);
+                        if(render_buffer[i]->updateCamera(new_position,new_look_at)){
+                            global_camera.setPosition(new_position);
+                            global_camera.setLookAt(new_look_at);
+                            break;
+                        }
                     }
                 }
+                renderer.setCamera(global_camera);
 
                 std::lock_guard guard(resource_mutex); //Resources should not be edited while in use by renderer.
                 //Queue draw calls
                 for (uint32_t i = 0; i < MAX_VISIBLE_OBJECTS; ++i) {
                     if (render_buffer[i] != nullptr) {
-                        render_buffer[i]->render(renderer,resource_manager);
+                        if(render_buffer[i]->getBounds().inFrustum(global_camera)){
+                            render_buffer[i]->render(renderer,resource_manager);
+                        }
                     }
                 }
                 //Render the image (Still holds pointers to resources)

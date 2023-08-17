@@ -119,6 +119,20 @@ public:
     virtual void predict(int delta_time, const EventList& events, const Services& services, const ResourceManager& resource_manager) = 0;
 
     /**
+     * Set the transform of the camera that belongs to this client.
+     * @details Used for frustum culling and rendering.
+     * Run on the client and server.
+     * Only runs for client-associated objects on server, and will take first values given by any associated object.
+     * On client, this will run for all objects, make sure to check if it is a player before settings!
+     * @warning Position and look_at are initialized with default values, not last values.
+     * @warning Should be very basic and fast, as it runs in the network or render thread.
+     * @param position Output the position of the camera.
+     * @param look_at Output the direction/look at the point of the camera.
+     * @return True if values have been set.
+     */
+    virtual bool updateCamera(glm::vec3& position, glm::vec3& look_at) const = 0;
+
+    /**
      * Write to services here to update them on the state of the game object.
      * @see update() and predict() for querying services and updating the game object.
      */
@@ -131,15 +145,6 @@ public:
      * @param resource_manager Use this to access meshes and textures.
      */
     virtual void render( Renderer& renderer, const ResourceManager& resource_manager) const = 0;
-
-    /**
-     * Set the camera if needed.
-     * This can also be done in render() but this method ensures it happens before other objects are rendered.
-     * @param renderer Set the camera here.
-     * @warning Only one game object on the client should do this.
-     */
-    virtual void setCamera(Renderer& renderer) const {};
-
 
     /**
      * Get bounding-sphere of this object for ray casting and culling.

@@ -28,6 +28,7 @@ struct ClientInfo{
     uint8_t current_event_counter = 0; //Counter of current event to make sure new events are more recent
     std::unordered_set<uint16_t> cached_objects; //Objects the client has been told to instantiate.
     bool handshake = false; //If the client has initiated a handshake
+    Camera camera{90,{0,0,1},1};
 };
 
 /**
@@ -93,6 +94,9 @@ private:
                     clients[client_id].handshake = true;
                 }
                 std::cout << "Client " << client_id << " has handshake \n";
+            } else if(type.type == CAMERA_CHANGE){
+                auto new_settings = extractStructFromPacket<CameraChange>(packet_data,sizeof(MessageTypeMetaData));
+                clients[client_id].camera = Camera{glm::degrees(new_settings.fov_radians),{0,0,-1},new_settings.aspect_ratio}; //todo standardized directions header
             }
 
         }else{  //data packet must be a client event
@@ -138,6 +142,8 @@ private:
             clients[client_id].associated_objects.emplace(addGameObjectNetworkThread(new Car()));
         }
     }
+
+
     /**
      * Wait for incoming events and send out game state
      */
@@ -153,10 +159,26 @@ private:
             //Send messages
             for (auto& [client_id, client] : clients) {
                 if(!client.handshake) continue;
-                //todo get visible list based on frustum culling + associated objects
+
                 std::lock_guard guard (swap_mutex); //Mutex needed to make sure swap does not happen during reading.
+
+                //update client cameras
+                glm::vec3 new_position = {2,2,2}; //differ default values to avoid nans
+                glm::vec3 new_look_at = {0,0,0};
+                for (const ObjectID& object_id : client.associated_objects) {
+                    if((*objects_buffer_network)[object_id]->updateCamera(new_position,new_look_at)){
+                        client.camera.setPosition(new_position);
+                        client.camera.setPosition(new_look_at);
+                        break;
+                    }
+                }
+
                 uint8_t buffer_location = 0;
                 for (const auto & [object_id, game_object] : *objects_buffer_network) {
+
+                    //not associated and not visible
+                    if(!game_object->getBounds().inFrustum(client.camera) && client.associated_objects.find(object_id) == client.associated_objects.end()) continue;
+
                     std::vector<uint8_t> data;
                     if(client.cached_objects.find(object_id) == client.cached_objects.end()){
                         //must create a new object

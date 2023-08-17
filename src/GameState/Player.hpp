@@ -184,7 +184,9 @@ protected:
     std::unique_ptr<GameObject> createNewInternal(const PlayerArgs &params) const override {
         return std::unique_ptr<GameObject>(new Player());
     }
+bool updateCamera(glm::vec3 &position, glm::vec3 &look_at) const override{
 
+    }
 
     void predict(int delta_time, const EventList &events, const Services &services,
                  const ResourceManager &resource_manager) override {

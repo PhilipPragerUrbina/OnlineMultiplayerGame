@@ -311,10 +311,13 @@ public:
         //nothing
     }
 
-    void setCamera(Renderer &renderer) const override {
+    bool updateCamera(glm::vec3 &position, glm::vec3 &look_at) const override{
         if(player){
-            renderer.setCamera(camera);
+            position = camera.getPosition();
+            look_at = camera.getLookAt();
+            return true;
         }
+        return false;
     }
 
     void render(Renderer &renderer, const ResourceManager &resource_manager) const override {
@@ -334,7 +337,7 @@ public:
         //todo indices and map culling, also clean up physics mesh
         //todo partial transparency with blending buffer
         //todo cube maps
-        return SphereBV();
+        return SphereBV{shared_state.position,2.0f};
     }
 
 protected:

@@ -51,8 +51,12 @@ public:
             renderer.queueDraw(manager.readMesh(mesh),glm::identity<glm::mat4>(),manager.readTexture(texture));
     }
 
+    bool updateCamera(glm::vec3 &position, glm::vec3 &look_at) const override{
+        return false;
+    }
+
     SphereBV getBounds() const override {
-        return SphereBV();
+        return SphereBV({0,0,0},10000.0f);
     }
 
 protected:

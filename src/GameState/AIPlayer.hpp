@@ -98,6 +98,10 @@ protected:
         direction = state.direction;
     }
 
+    bool updateCamera(glm::vec3 &position, glm::vec3 &look_at) const override{
+
+    }
+
     std::unique_ptr<GameObject> createNewInternal(const PlayerArgs &params) const override {
         return std::unique_ptr<GameObject>(new Player());
     }

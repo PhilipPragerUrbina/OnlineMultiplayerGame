@@ -173,7 +173,7 @@ private:
         glm::vec3 screen_space[3];
         for (int i = 0; i < 3; ++i) {
             screen_space[i] = clip_tri.pos[i] / clip_tri.pos[i].w; //normalize with w
-            screen_space[i] = {(screen_space[i].x + 1.0) * ((float)frame_buffer.getWidth()/2.0f),(screen_space[i].y + 1.0) * ((float)frame_buffer.getHeight()/2.0f), (screen_space[i].z+1.0f) * (camera.getFarPlane() - camera.getNearPlane())/2.0f + camera.getNearPlane()};
+            screen_space[i] = {(screen_space[i].x + 1.0) * ((float)frame_buffer.getWidth()/2.0f),(screen_space[i].y + 1.0) * ((float)frame_buffer.getHeight()/2.0f), (screen_space[i].z+1.0f) * (camera.getFarPlaneDistance() - camera.getNearPlaneDistance())/2.0f + camera.getNearPlaneDistance()};
         }
         //get bounding box(also clamp to screen bounds)
         glm::int2 box_min = max(min(min(screen_space[0], screen_space[1]),screen_space[2]), {0,0,0});
@@ -225,11 +225,11 @@ private:
         //Get intersection with line xz
         float slope_1 = (a.z-b.z)/(a.x-b.x);
         // z = m(x-x1)+z1, near = m(x-x1)+z1, (near-z1)/m+x1  = x
-        float x = (-camera.getNearPlane()-a.z)/slope_1 + a.x;
+        float x = (-camera.getNearPlaneDistance()-a.z)/slope_1 + a.x;
         //Get intersection with line yz
         float slope_2 = (a.z-b.z)/(a.y-b.y);
-        float y = (-camera.getNearPlane()-a.z)/slope_2 + a.y;
-        return {x,y,-camera.getNearPlane(),1}; //W is always 1 in view space. Z must be on the plane.
+        float y = (-camera.getNearPlaneDistance()-a.z)/slope_2 + a.y;
+        return {x,y,-camera.getNearPlaneDistance(),1}; //W is always 1 in view space. Z must be on the plane.
     }
 
 
@@ -243,7 +243,7 @@ private:
         std::vector<int> inside;
         std::vector<int> outside;
         for (int i = 0; i < 3; ++i) {
-            if(view_tri.pos[i].z < -camera.getNearPlane()){
+            if(view_tri.pos[i].z < -camera.getNearPlaneDistance()){
                 inside.push_back(i);
             }else{
                 outside.push_back(i);
@@ -286,7 +286,7 @@ private:
     void clearFrame(FrameBuffer& frame_buffer,const glm::vec3& background_color) const {
         for (int x = 0; x < frame_buffer.getWidth(); ++x) {
             for (int y = 0; y < frame_buffer.getHeight(); ++y) {
-                frame_buffer.setPixel(x,y,{background_color,camera.getFarPlane()});
+                frame_buffer.setPixel(x,y,{background_color,camera.getFarPlaneDistance()});
             }
         }
     }

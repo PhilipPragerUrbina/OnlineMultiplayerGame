@@ -8,16 +8,18 @@
 #include "glm/gtx/norm.hpp"
 
 /**
- * A sphere bounding volume
+ * A sphere shaped bounding volume
  */
 struct SphereBV {
-    glm::vec3 position{};
+
+    glm::vec3 position; //center
+
     float radius;
 
     /**
-     * Create a sphere bounding volume
-     * @param position Position of sphere
-     * @param radius Radius of sphere
+     * Create a sphere-shaped bounding volume
+     * @param position Position of the sphere
+     * @param radius Radius of the sphere
      */
     SphereBV(const glm::vec3& position = {0,0,0},float radius = 0) : position(position), radius(radius) {}
 
@@ -45,18 +47,18 @@ struct SphereBV {
     }
 
     /**
-   * Get the closest point on a line segment
-   * @param a Start of line
-   * @param b End of line
-   * @param point Target point
-   * @return Closest point
-   */
+     * Get the closest point on a line segment
+     * @param a Start of line
+     * @param b End of line
+     * @param point Target point
+     * @return Closest point
+     */
     static glm::vec3 closestPointOnLineSegment(glm::vec3 a, glm::vec3 b, glm::vec3 point)
     {
         glm::vec3 ab = b - a;
         float t = glm::dot(point - a, ab) / glm::dot(ab, ab);
         return a + std::min(std::max(t, 0.0f), 1.0f) * ab;
-    }
+    } //todo move
 
 
     /**
@@ -65,10 +67,10 @@ struct SphereBV {
      * @param plane_offset Plane position from origin.
      * @return True if intersects or is behind.
      */
-    bool intersectPlaneOrBehind(const glm::vec3& plane_normal, const glm::vec3& plane_offset) const {
+    [[nodiscard]] bool intersectPlaneOrBehind(const glm::vec3& plane_normal, const glm::vec3& plane_offset) const {
         //get distance from plane
         float distance = glm::dot(position-plane_offset, plane_normal);
-        return distance < radius; //if radius or below it is intersecting with the plane or behind
+        return distance < radius*2; //if radius or below, it is intersecting with the plane or behind
     }
 
     /**
@@ -76,25 +78,24 @@ struct SphereBV {
      * @param camera Camera
      * @return True if in frustum, does not check far plane
      */
-    bool frustumCull(const Camera& camera){
+    [[nodiscard]] bool inFrustum(const Camera& camera) const {
         //get planes in view space
-       for(const Plane& plane : camera.getPlanes()){
-            if(frustumCull(plane.normal, plane.offset))  {
+       for(const Plane& plane : camera.getFrustumPlanes()){
+           //planes face toward inside with this camera class so the normal must be flipped
+            if(!intersectPlaneOrBehind(-plane.normal, plane.offset))  {
                 return false;
             }
        }
         return true;
     }
 
-
-    //todo return proper collision normal
     /**
-   * Collide this sphere with a triangle
-   * @param collision_point Point of collision.
-     * @param triangle_plane Normal of triangle surface toward collider.
-   * @return True if intersect
-   * @see https://wickedengine.net/2020/04/26/capsule-collision-detection/
-   */
+     * Collide this sphere with a triangle
+     * @param collision_point Output the point of collision if collision occurs.
+     * @param triangle_plane Output the normal of triangle surface toward collider if collision occurs.
+     * @return True if intersect
+     * @see https://wickedengine.net/2020/04/26/capsule-collision-detection/
+     */
     [[nodiscard]] bool collide( const Triangle& other, glm::vec3& collision_point, glm::vec3& triangle_plane) const {
         glm::vec3 plane = glm::normalize(glm::cross(glm::vec3(other.pos[1] - other.pos[0]), glm::vec3(other.pos[2] - other.pos[0]))); //Get triangle plane
 
@@ -161,9 +162,8 @@ struct SphereBV {
     }
 
 
-
     /**
-     * Expand sphere to encompass a point
+     * Expand the sphere to encompass a point
      * @param inflate Additional extra radius to add beyond point.
      * @param point Point to contain
      */
@@ -184,18 +184,17 @@ struct SphereBV {
     }
 
     /**
-     * Check if point is in sphere
+     * Check if point is in the sphere
      */
     [[nodiscard]] bool isPointContained(const glm::vec3& point) const{
         return glm::distance(point,position) < radius;
     }
 
-
     /**
      * Ray cast the sphere BV
      * @param origin Origin of ray
      * @param direction Direction of ray
-     * @param distance Distance if hit
+     * @param distance Output Distance if hit
      * @return True if hit
      * Uses algorithm from: https://raytracing.github.io/books/RayTracingInOneWeekend.html
      */
@@ -205,10 +204,12 @@ struct SphereBV {
         float b = 2.0f * glm::dot(oc, direction);
         float c =  glm::dot(oc, oc) - radius*radius;
         float discriminant = b*b - 4*a*c;
-        distance = (-b - sqrtf(discriminant) ) / (2.0f*a); //todo don't run this if not hit
-        return discriminant > 0;
+        if( discriminant > 0){
+            distance = (-b - sqrtf(discriminant) ) / (2.0f*a);
+            return true;
+        }
+        return false;
     }
-
 
     /**
      * Combine multiple volumes into a single encompassing volume

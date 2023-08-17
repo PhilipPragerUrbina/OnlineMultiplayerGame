@@ -54,7 +54,8 @@ struct NewObjectMetaData {
  */
 enum TCPMessageType{
     HANDSHAKE, //Client sends initial information to server
-    NEW_OBJECT //Server tells a client to create a new object
+    NEW_OBJECT, //Server tells a client to create a new object
+    CAMERA_CHANGE
 };
 
 /**
@@ -62,6 +63,14 @@ enum TCPMessageType{
  */
 struct MessageTypeMetaData{
     TCPMessageType type;
+};
+
+/**
+ * Client tells server new visibility settings
+ */
+struct CameraChange {
+    float aspect_ratio;
+    float fov_radians;
 };
 
 /**
