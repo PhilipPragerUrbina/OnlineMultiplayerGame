@@ -19,7 +19,6 @@ Currently features:
   * Map player collisions
   * Acceleration structure
   * Player controller
-  * SDF to SDF collisions with custom algorithm
 * Game engine
   * Event system
   * Concurrent render and game thread
@@ -37,8 +36,6 @@ Future features:
   * Ray marching integration
   * Performance metrics
 * Physics engine
-  * SDF to triangle collisons
-  * XPBD solver
   * Mesh/polygon collisions
   * Dynamic BVH
   * Particle system
